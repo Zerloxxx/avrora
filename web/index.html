@@ -1,0 +1,364 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Аврора — устойчивая спутниковая группировка</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Unbounded:wght@500;700&family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <!-- иконки: простые контуры 24×24, штрих 2 -->
+  <svg hidden xmlns="http://www.w3.org/2000/svg">
+    <symbol id="i-play" viewBox="0 0 24 24"><path d="M7 5v14l11-7z"/></symbol>
+    <symbol id="i-pause" viewBox="0 0 24 24"><path d="M7 5h4v14H7zM13 5h4v14h-4z"/></symbol>
+    <symbol id="i-plus" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></symbol>
+    <symbol id="i-minus" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M5 12h14"/></symbol>
+    <symbol id="i-fit" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 9V5a1 1 0 0 1 1-1h4M15 4h4a1 1 0 0 1 1 1v4M20 15v4a1 1 0 0 1-1 1h-4M9 20H5a1 1 0 0 1-1-1v-4"/><circle cx="12" cy="12" r="3"/></symbol>
+    <symbol id="i-clock" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></symbol>
+    <symbol id="i-x" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M6 6l12 12M18 6L6 18"/></symbol>
+    <symbol id="i-chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 9l6 6 6-6"/></symbol>
+    <symbol id="i-panel-l" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M9 4v16"/></symbol>
+    <symbol id="i-panel-r" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M15 4v16"/></symbol>
+    <symbol id="i-menu" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M4 7h16M4 12h16M4 17h16"/></symbol>
+    <symbol id="i-upload" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 16V4M6 10l6-6 6 6M4 20h16"/></symbol>
+    <symbol id="i-download" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 4v12M6 10l6 6 6-6M4 20h16"/></symbol>
+  </svg>
+  <canvas id="space"></canvas>
+  <canvas id="overlay"></canvas>
+
+  <header class="top">
+    <a class="logo" href="#" id="logo">
+      <span class="logo-mark"></span>
+      <span class="logo-text">АВРОРА</span>
+    </a>
+    <nav class="nav">
+      <a href="#" id="nav-scene" hidden>Сцена</a>
+      <a href="#" id="nav-compare">Сравнение вариантов <span class="badge" id="variant-count">0</span></a>
+      <a href="#" id="nav-analysis">Аналитика</a>
+      <a href="#" id="nav-about">Как это работает</a>
+    </nav>
+    <div class="top-actions">
+      <div class="panel-toggles">
+        <button class="icon-btn" id="toggle-left" title="Панель «Проект»" aria-label="Показать панель проекта"><svg class="ic" aria-hidden="true"><use href="#i-panel-l"/></svg></button>
+        <button class="icon-btn" id="toggle-right" title="Панель «Связь»" aria-label="Показать панель связи"><svg class="ic" aria-hidden="true"><use href="#i-panel-r"/></svg></button>
+      </div>
+      <label class="btn ghost small" title="Загрузить сценарий (JSON)">
+        <svg class="ic only-narrow" aria-hidden="true"><use href="#i-upload"/></svg><span class="only-wide">Загрузить сценарий</span>
+        <input type="file" id="file-input" accept="application/json" hidden aria-label="Загрузить сценарий JSON">
+      </label>
+      <div class="menu">
+        <button class="btn ghost small" id="btn-export" title="Выгрузить"><svg class="ic only-narrow" aria-hidden="true"><use href="#i-download"/></svg><span class="only-wide">Выгрузить</span> <svg class="ic only-wide" aria-hidden="true"><use href="#i-chevron"/></svg></button>
+        <div class="menu-items" hidden>
+          <button id="export-scenario">Сценарий (JSON)</button>
+          <button id="export-results">Результаты расчёта (JSON)</button>
+          <button id="export-variants">Все варианты (JSON)</button>
+          <button id="export-report">Отчёт «Обоснование конфигурации»</button>
+          <button id="export-link">Скопировать ссылку на конфигурацию</button>
+        </div>
+      </div>
+      <div class="menu mobile-menu">
+        <button class="icon-btn" id="btn-menu" title="Меню" aria-label="Меню"><svg class="ic" aria-hidden="true"><use href="#i-menu"/></svg></button>
+        <div class="menu-items" id="mobile-menu-items" hidden>
+          <button data-go="nav-compare">Сравнение вариантов</button>
+          <button data-go="nav-analysis">Аналитика</button>
+          <button data-go="nav-about">Как это работает</button>
+          <button data-go="logo">На главный экран</button>
+        </div>
+      </div>
+    </div>
+  </header>
+
+  <section class="hero">
+    <p class="eyebrow">КосмоХакатон 2026 — проектирование устойчивой спутниковой группировки</p>
+    <h1>Связь над Севером, которая не прерывается</h1>
+    <p>Соберите группировку, задайте отказы аппаратов и проверьте, что каждый наземный пункт достигает шлюза не менее 90% времени суток.</p>
+    <div class="hero-actions">
+      <button class="btn primary" id="btn-start">Открыть проект</button>
+      <button class="btn ghost" id="btn-about">Как это работает</button>
+    </div>
+  </section>
+
+  <aside class="panel left">
+    <div class="tabs">
+      <button data-tab="tab-project" class="active">Сценарий</button>
+      <button data-tab="tab-config">Настройка</button>
+    </div>
+
+    <section class="tab active" id="tab-project">
+      <h3>Сценарий из кейса</h3>
+      <div class="scenario-list" id="scenario-list"></div>
+
+      <h3>Этап развёртывания</h3>
+      <div class="seg" id="stage-seg"></div>
+
+      <h3>Пункт, для которого считаем связь</h3>
+      <div class="seg" id="client-seg"></div>
+
+      <h3>Обозначения</h3>
+      <div class="legend">
+        <span><b style="--c:#4f8dff"></b>Плоскость P1</span>
+        <span><b style="--c:#9b5cff"></b>Плоскость P2</span>
+        <span><b style="--c:#ff4fd8"></b>Плоскость P3</span>
+        <span><b style="--c:#ff4d4d"></b>Отказ</span>
+        <span><b style="--c:#ffd166"></b>Маршрут</span>
+        <span><b style="--c:#ff9f43"></b>Шлюз</span>
+      </div>
+    </section>
+
+    <section class="tab" id="tab-config">
+      <h3>Орбитальные плоскости <button class="link" id="btn-reset" title="Вернуть исходный файл">сбросить всё</button></h3>
+      <table class="planes" id="planes-table">
+        <thead><tr><th></th><th>RAAN, °</th><th>Фаза, °</th><th>Накл., °</th><th>КА</th></tr></thead>
+        <tbody></tbody>
+      </table>
+      <p class="hint">RAAN поворачивает плоскость, фаза сдвигает аппараты вдоль орбиты, наклонение — «ось» плоскости (по умолчанию общее). Пересчёт — сразу после ввода.</p>
+
+      <h3>Конструктор группировки <button class="link" id="btn-walker-toggle">развернуть</button></h3>
+      <form class="walker" id="walker-form" hidden>
+        <div class="row3">
+          <label>Аппаратов<input type="number" id="wk-T" value="48" min="2" max="400" step="1"></label>
+          <label>Плоскостей<input type="number" id="wk-P" value="3" min="1" max="24" step="1"></label>
+          <label>Фазир. F<input type="number" id="wk-F" value="1" min="0" max="23" step="1"></label>
+        </div>
+        <div class="row3">
+          <label>RAAN-веер<select id="wk-spread"><option value="180">180° (Star)</option><option value="360">360° (Delta)</option></select></label>
+          <label>Наклонение<input type="number" id="wk-inc" min="1" max="180" step="0.5" placeholder="общее"></label>
+          <label>Очередей<input type="number" id="wk-B" value="3" min="1" max="12" step="1"></label>
+        </div>
+        <div class="row">
+          <select id="wk-mode" title="Один запуск выводит аппараты в одну плоскость. Режим «вперемешку» означает отдельный запуск в каждую плоскость на каждую очередь."><option value="plane">очередь = одна плоскость (один запуск)</option><option value="spread">очередь по нескольким плоскостям (запуск в каждую)</option></select>
+          <button class="btn small primary" type="submit">Собрать</button>
+        </div>
+        <p class="hint" id="wk-hint">Walker T/P/F: T аппаратов поровну в P плоскостях, F задаёт сдвиг фаз между плоскостями. Кейс — 48/3/1, веер 180°. RAAN и фаза задаются при выводе (окно старта, довыведение); один запуск — одна плоскость, поэтому очередь «по нескольким плоскостям» = несколько запусков. Заменяет текущую группировку; отказы по несуществующим аппаратам снимаются.</p>
+      </form>
+
+      <h3>Периоды недоступности</h3>
+      <div class="outages" id="outage-list"></div>
+      <form class="outage-form" id="outage-form">
+        <label class="field">Аппарат или шлюз<select id="outage-node"></select></label>
+        <div class="row">
+          <label class="field">Недоступен с<input type="time" id="outage-start" value="06:00" required></label>
+          <label class="field">до<input type="time" id="outage-end" value="23:59" required></label>
+          <button class="btn small" type="submit">Добавить</button>
+        </div>
+      </form>
+      <p class="hint">Клик по спутнику на сцене подставляет его в форму.</p>
+
+      <h3>Наземные пункты</h3>
+      <div class="sites" id="site-list"></div>
+      <form class="site-form" id="site-form">
+        <div class="row">
+          <select id="site-preset" aria-label="Город из списка">
+            <option value="">Город из списка…</option>
+            <option value="G_NOR|Норильск|69.35|88.20">Норильск</option>
+            <option value="G_TIK|Тикси|71.64|128.87">Тикси</option>
+            <option value="G_ANA|Анадырь|64.73|177.51">Анадырь</option>
+            <option value="G_SAL|Салехард|66.53|66.60">Салехард</option>
+            <option value="G_DIK|Диксон|73.51|80.55">Диксон</option>
+            <option value="G_PEV|Певек|69.70|170.31">Певек</option>
+            <option value="G_ARH|Архангельск|64.54|40.54">Архангельск</option>
+            <option value="G_YAK|Якутск|62.03|129.73">Якутск</option>
+          </select>
+          <select id="site-role" aria-label="Роль пункта"><option value="gateway">шлюз</option><option value="client">клиент</option></select>
+        </div>
+        <label class="field">Рельеф и застройка вокруг антенны<select id="site-terrain"></select></label>
+        <div class="row">
+          <label class="field">Обозначение<input type="text" id="site-id" placeholder="G2" maxlength="12" required></label>
+          <label class="field">Широта, °<input type="number" id="site-lat" placeholder="69.35" step="0.01" min="-90" max="90" required></label>
+          <label class="field">Долгота, °<input type="number" id="site-lon" placeholder="88.20" step="0.01" min="-180" max="180" required></label>
+        </div>
+        <button class="btn small wide" type="submit">Добавить пункт</button>
+      </form>
+      <button class="btn small wide" id="btn-place" type="button">Поставить шлюз кликом по Земле</button>
+      <p class="hint">Второй шлюз на востоке — самый дешёвый способ поднять доступность на ранних этапах.</p>
+    </section>
+  </aside>
+
+  <aside class="panel right">
+    <div class="tabs">
+      <button data-tab="tab-net" class="active">Связь</button>
+      <button data-tab="tab-variants">Варианты <span class="badge" id="variant-count-tab">0</span></button>
+      <button data-tab="tab-tools">Инструменты</button>
+    </div>
+
+    <section class="tab active" id="tab-net">
+      <h3>Сейчас на сцене</h3>
+      <div class="stats">
+        <div class="stat"><span class="v" id="st-active">–</span><span class="l">активных аппаратов</span></div>
+        <div class="stat"><span class="v" id="st-isl">–</span><span class="l">межспутниковых связей</span></div>
+      </div>
+      <div class="route" id="route-box">
+        <div class="route-title">Маршрут</div>
+        <div class="route-path" id="route-path">—</div>
+      </div>
+
+      <h3>Доступность за сутки</h3>
+      <div class="avail" id="avail-list"></div>
+    </section>
+
+    <section class="tab" id="tab-variants">
+      <h3>Сохранить текущую конфигурацию</h3>
+      <div class="variants">
+        <form class="row" id="variant-form">
+          <label class="field">Название<input type="text" id="variant-name" placeholder="Например, «второй шлюз в Тикси»" maxlength="40"></label>
+          <button class="btn small primary" type="submit">Сохранить</button>
+        </form>
+      </div>
+      <h3>Сохранённые варианты</h3>
+      <div class="variants">
+        <div class="variant-list" id="variant-list"></div>
+        <button class="btn small wide" id="btn-compare" disabled>Сравнить отмеченные</button>
+      </div>
+    </section>
+
+    <section class="tab" id="tab-tools">
+      <h3>Что можно улучшить</h3>
+      <div class="tools">
+        <button class="btn small wide" id="btn-optimize">Подобрать RAAN и фазу</button>
+        <button class="btn small wide" id="btn-vulnerable">Найти уязвимые аппараты</button>
+        <button class="btn small wide primary" id="btn-analysis">Открыть аналитику</button>
+        <div class="progress" id="tool-progress" hidden><div class="bar"></div><span class="txt"></span></div>
+        <div class="tool-result" id="tool-result"></div>
+      </div>
+    </section>
+  </aside>
+
+  <footer class="timeline">
+    <button class="icon-btn playing" id="btn-play" title="Пауза / продолжить" aria-label="Пауза или продолжить"><svg class="ic" aria-hidden="true" data-when="paused"><use href="#i-play"/></svg><svg class="ic" aria-hidden="true" data-when="playing"><use href="#i-pause"/></svg></button>
+    <span class="time"><span id="time-label">00:00</span><small>UTC</small></span>
+    <input type="range" id="time-range" min="0" max="86400" step="120" value="0" aria-label="Время модели">
+    <button class="icon-btn" id="btn-now" title="Перейти к текущему времени по UTC" aria-label="Текущее время"><svg class="ic" aria-hidden="true"><use href="#i-clock"/></svg></button>
+    <label class="speed">скорость<select id="speed" aria-label="Скорость воспроизведения">
+      <option value="60">×1</option>
+      <option value="240" selected>×4</option>
+      <option value="960">×16</option>
+    </select></label>
+  </footer>
+
+  <div class="zoom">
+    <button class="icon-btn" id="zoom-in" title="Приблизить" aria-label="Приблизить"><svg class="ic" aria-hidden="true"><use href="#i-plus"/></svg></button>
+    <button class="icon-btn" id="zoom-out" title="Отдалить" aria-label="Отдалить"><svg class="ic" aria-hidden="true"><use href="#i-minus"/></svg></button>
+    <button class="icon-btn" id="zoom-reset" title="Вся Земля в кадре" aria-label="Вид по умолчанию"><svg class="ic" aria-hidden="true"><use href="#i-fit"/></svg></button>
+  </div>
+
+  <div id="tooltip" class="tooltip" hidden></div>
+  <div id="toast" class="toast" hidden></div>
+
+  <!-- сравнение вариантов -->
+  <div class="modal" id="compare-modal" hidden>
+    <div class="modal-card wide">
+      <div class="modal-head">
+        <h2>Сравнение вариантов</h2>
+        <button class="icon-btn close" data-close aria-label="Закрыть"><svg class="ic" aria-hidden="true"><use href="#i-x"/></svg></button>
+      </div>
+      <div class="modal-body" id="compare-body"></div>
+    </div>
+  </div>
+
+  <!-- аналитика -->
+  <div class="modal" id="analysis-modal" hidden>
+    <div class="modal-card wide tall">
+      <div class="modal-head">
+        <h2>Аналитика</h2>
+        <div class="progress slim" id="an-progress" hidden><div class="bar"></div><span class="txt"></span></div>
+        <button class="icon-btn close" data-close aria-label="Закрыть"><svg class="ic" aria-hidden="true"><use href="#i-x"/></svg></button>
+      </div>
+      <div class="tabs an-tabs">
+        <button data-tab="an-design">Проект</button>
+        <button data-tab="an-coverage" class="active">Покрытие</button>
+        <button data-tab="an-deploy">Развёртывание</button>
+        <button data-tab="an-resilience">Устойчивость</button>
+        <button data-tab="an-quality">Качество связи</button>
+        <button data-tab="an-report">Отчёт</button>
+      </div>
+      <div class="modal-body an-body">
+        <section class="tab" id="an-design">
+          <div class="an-head">
+            <p>Подбор группировки под заданные пункты: перебор Walker-конфигураций (число аппаратов, плоскостей, фазирование, веер RAAN, наклонение) с теми же правилами расчёта. Показывает, сколько аппаратов минимально нужно для цели и что даёт каждая следующая партия.</p>
+            <div class="row">
+              <span class="mc-ctl">КА: <input type="text" id="an-ds-T" value="24, 30, 36, 42, 48, 54, 60" size="22"></span>
+              <span class="mc-ctl">плоскостей: <input type="text" id="an-ds-P" value="2, 3, 4, 5, 6" size="10"></span>
+              <label class="chk"><input type="checkbox" id="an-ds-inc"> перебирать наклонение (70/80/90° + общее)</label>
+              <span class="mc-ctl">очередей: <input type="number" id="an-ds-B" value="3" min="1" max="12" style="width:48px"></span>
+              <button class="btn small primary" id="an-run-design">Подобрать проект</button>
+            </div>
+          </div>
+          <div id="an-design-out" class="an-out"></div>
+        </section>
+        <section class="tab active" id="an-coverage">
+          <div class="an-head">
+            <p>Доля времени со сквозным маршрутом до шлюза для сетки точек 55–85° с.ш. (шаг 2.5° × 5°). Показывает, где группировка сильная, а где дыры — не только для трёх пунктов из задания.</p>
+            <div class="row"><button class="btn small primary" id="an-run-coverage">Рассчитать карту</button>
+              <label class="chk"><input type="checkbox" id="an-coverage-globe" checked> показывать на глобусе</label></div>
+          </div>
+          <div id="an-coverage-out" class="an-out"></div>
+        </section>
+        <section class="tab" id="an-deploy">
+          <div class="an-head">
+            <p>Запуски с интервалом три месяца: какую связь получат пункты на каждом этапе, и можно ли улучшить ранние этапы другим составом очередей. Число и размер очередей — из конструктора группировки.</p>
+            <div class="row"><button class="btn small primary" id="an-run-deploy">Показать план</button>
+              <button class="btn small" id="an-run-batches">Подобрать состав очередей</button></div>
+          </div>
+          <div id="an-deploy-out" class="an-out"></div>
+        </section>
+        <section class="tab" id="an-resilience">
+          <div class="an-head">
+            <p>Что случится при отказах: матрица N-1/N-2 по всем парам аппаратов, запас прочности, вероятностная оценка и лучшее место для резервного спутника.</p>
+            <div class="row">
+              <button class="btn small primary" id="an-run-pairs">Матрица N-1 / N-2</button>
+              <button class="btn small" id="an-run-spares">Где нужен резерв</button>
+              <span class="mc-ctl"><input type="number" id="an-mc-p" value="5" min="0" max="100" step="1"> % отказов/сутки ·
+                <input type="number" id="an-mc-runs" value="300" min="50" max="2000" step="50"> прогонов</span>
+              <button class="btn small" id="an-run-mc">Монте-Карло</button>
+            </div>
+          </div>
+          <div id="an-resilience-out" class="an-out"></div>
+        </section>
+        <section class="tab" id="an-quality">
+          <div class="an-head">
+            <p>Доступность ≠ хорошая связь. Задержка сигнала по длине маршрута, число переключений маршрута за сутки, чисто геометрическая видимость и влияние тени Земли.</p>
+            <div class="row"><label class="chk"><input type="checkbox" id="an-eclipse"> аппараты в тени Земли не ретранслируют (ISL выключены)</label></div>
+          </div>
+          <div id="an-quality-out" class="an-out"></div>
+        </section>
+        <section class="tab" id="an-report">
+          <div class="an-head">
+            <p>Документ «Обоснование конфигурации»: параметры, показатели по пунктам, сравнение сохранённых вариантов, результаты аналитики и рекомендации. Откроется в новой вкладке — оттуда печать или сохранение в PDF.</p>
+            <div class="row"><button class="btn small primary" id="an-run-report">Сформировать отчёт</button></div>
+          </div>
+          <div id="an-report-out" class="an-out"></div>
+        </section>
+      </div>
+    </div>
+  </div>
+
+  <!-- о подходе -->
+  <div class="modal" id="about-modal" hidden>
+    <div class="modal-card">
+      <div class="modal-head">
+        <h2>Как это работает</h2>
+        <button class="icon-btn close" data-close aria-label="Закрыть"><svg class="ic" aria-hidden="true"><use href="#i-x"/></svg></button>
+      </div>
+      <div class="modal-body prose">
+        <p><b>Задача.</b> 48 спутников на высоте 550 км должны обеспечить связь северных наземных пунктов со шлюзом в Мурманске. Данные идут по цепочке «пункт → спутник → … → спутник → шлюз». Цель — сквозной маршрут не менее 90% времени для каждого пункта.</p>
+        <p><b>Расчёт.</b> Каждые 120 с за сутки вычисляются положения аппаратов (круговые орбиты, вращение Земли), видимость с пунктов (угол возвышения ≥ 10°) и межспутниковые связи (дальность ≤ ISL и линия не пересекает Землю). Формулы — из расчётного модуля кейса. Сверх кейса: у пункта может быть маска горизонта — закрытие неба рельефом или застройкой по 36 азимутам (пресеты местности, реальный рельеф ASTER/Copernicus DEM, своя); аппарат виден, только если он выше и минимального угла, и маски в своём азимуте.</p>
+        <p><b>Маршрут.</b> Поиск в ширину по графу «спутники + связи»: клиент подключается к любому видимому аппарату, маршрут заканчивается на аппарате, видимом со шлюза. Клиентские пункты не ретранслируют. Если маршрута нет — сервис называет причину: нет видимого спутника, разрыв сети, нет контакта со шлюзом или шлюз недоступен.</p>
+        <p><b>Показатели.</b> По каждому пункту: доля отсчётов с видимым активным спутником, доля отсчётов с маршрутом до шлюза (доступность), максимальный перерыв, число перерывов, среднее число переходов маршрута (рёбер, включая две наземные линии), задержка, переключения. Сетка — 720 отсчётов 0…86 280 с, как в описании данных.</p>
+        <p><b>Проектирование.</b> Конструктор группировки собирает Walker T/P/F (T аппаратов в P плоскостях, фазирование F, веер RAAN 180° или 360°), даёт каждой плоскости своё наклонение и раскладывает аппараты по любому числу очередей запуска; кейс — 48/3/1 с веером 180°. «Подбор проекта» перебирает ~200 таких конфигураций и показывает минимум аппаратов для цели и что даёт каждая следующая партия.</p>
+        <p><b>Инструменты.</b> Автоподбор RAAN и фазирования — покоординатный спуск по плоскостям, целевая функция: сначала худший пункт, затем перерывы и хопы. Поиск уязвимых аппаратов — по очереди выводим каждый спутник на сутки и смотрим, у кого просадка сильнее.</p>
+        <p><b>Аналитика.</b> Карта покрытия — та же модель для сетки точек всего Севера. План развёртывания — расчёт по этапам и жадный подбор состава очередей. Устойчивость — полный перебор одиночных и парных отказов, Монте-Карло случайных отказов, поиск слота для резервного аппарата. Маршрут «липкий»: держится, пока все его звенья существуют, — так считаются переключения и задержка.</p>
+        <p><b>Ограничение модели.</b> Орбита на сцене приподнята визуально (×1.42), чтобы спутники читались; все расчёты идут в настоящих километрах.</p>
+      </div>
+    </div>
+  </div>
+
+  <script src="data/scenarios.js"></script>
+  <script src="data/terrain.js" onerror="window.TERRAIN = window.TERRAIN || {}"></script>
+  <script type="importmap">
+    { "imports": { "three": "./vendor/three.module.js" } }
+  </script>
+  <script type="module" src="src/app.js"></script>
+</body>
+</html>
