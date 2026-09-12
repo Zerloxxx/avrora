@@ -344,8 +344,15 @@ body:not(.workspace) .panel.right { transform: translateX(16px); }
 
 /* ---------- workspace mode ---------- */
 .logo { text-decoration: none; color: inherit; }
-body.workspace .hero { opacity: 0; pointer-events: none; transform: translate(-50%, -12px); }
-.hero { transition: opacity 300ms var(--ease-out), transform 300ms var(--ease-out); }
+/* opacity: 0 не убирает элемент из hit-testing, а правило `.hero > *` выше возвращает детям
+   pointer-events: auto — поэтому невидимые заголовок, абзац и кнопка «Открыть проект» оставались
+   поверх сцены (z-index 5 против 1 у оверлея) широкой полосой через верх Земли: курсор там
+   становился текстовым, а перетаскивание выделяло страницу вместо вращения планеты.
+   visibility гасит всё поддерево сразу — и для курсора, и для скринридера; в transition она идёт
+   с allow-discrete, чтобы затухание осталось плавным. */
+body.workspace .hero { opacity: 0; visibility: hidden; pointer-events: none; transform: translate(-50%, -12px); }
+body.workspace .hero > * { pointer-events: none; }
+.hero { transition: opacity 300ms var(--ease-out), transform 300ms var(--ease-out), visibility 300ms allow-discrete; }
 .badge {
   display: inline-block; min-width: 18px; padding: 1px 6px; margin-left: 4px;
   border-radius: 999px; background: rgba(255,255,255,.1); font-size: 11px; text-align: center;
