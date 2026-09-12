@@ -22,6 +22,7 @@ const showTab = id => document.querySelector(`.tabs button[data-tab="${id}"]`)?.
 $('#btn-play').onclick = () => {
   state.playing = !state.playing;
   $('#btn-play').classList.toggle('playing', state.playing);
+  sync.stateChanged();
 };
 $('#btn-start').onclick = () => enterWorkspace();
 $('#btn-play').classList.toggle('playing', state.playing);
@@ -90,6 +91,7 @@ $('#btn-now').onclick = () => {
   const d = new Date();
   state.t = (d.getUTCHours() * 3600 + d.getUTCMinutes() * 60 + d.getUTCSeconds()) % state.scenario.environment.horizon_s;
   toast(`Время модели — текущее UTC ${fmtTime(state.t)}`, 'ok', 2000);
+  sync.stateChanged();
 };
 
 // наземные пункты
@@ -139,8 +141,9 @@ $$('.modal').forEach(m => {
 });
 window.addEventListener('keydown', ev => { if (ev.key === 'Escape') $$('.modal').forEach(m => m.hidden = true); });
 
-$('#time-range').oninput = ev => { state.t = +ev.target.value; };
-$('#speed').onchange = ev => { state.speed = +ev.target.value; };
+// скорость, пауза и момент уходят ведомому немедленно: таймер такта в скрытой вкладке заторможен
+$('#time-range').oninput = ev => { state.t = +ev.target.value; sync.stateChanged(); };
+$('#speed').onchange = ev => { state.speed = +ev.target.value; sync.stateChanged(); };
 $$('.panel').forEach(p => p.addEventListener('pointerdown', enterWorkspace));
 
 

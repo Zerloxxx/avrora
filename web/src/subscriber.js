@@ -300,7 +300,8 @@ function renderStatus() {
 
   $('#clock-time').textContent = fmtTime(S.t);
   const leader = leaderPresent();
-  $('#clock-mode').textContent = S.follow ? `за инженерным видом, ×${Math.round(S.speed / 60)}`
+  // ведущий в фоне — такты не идут, но скорость и момент у нас его: так и говорим
+  $('#clock-mode').textContent = S.follow ? `${leader ? 'за инженерным видом' : 'инженерный вид в фоне'}, ×${Math.round(S.speed / 60)}`
     : S.live ? 'сейчас, UTC' : 'выбранный момент';
   const btn = $('#btn-live');
   if (S.follow) { btn.hidden = false; btn.textContent = 'Сейчас'; }
@@ -460,13 +461,16 @@ if (!id) {
   let lastDiff = b64;
   startFollower({
     onTick: m => {
-      S.leaderSeen = Date.now();
-      S.speed = m.speed;
+      // restored — состояние поднято с диска при возврате на экран, живым ведущим это не считается
+      if (!m.restored) S.leaderSeen = Date.now();
+      if (Number.isFinite(m.speed)) S.speed = m.speed;
       if (S.detached) return;              // отцепился руками — время не трогаем
       const first = !S.follow;
       S.follow = true; S.live = false;
-      S.t = m.t; S.playing = m.playing;
-      if (first) { renderDay(); toast('Следую за инженерным видом', 'ok'); }
+      const H = S.scenario.environment.horizon_s;
+      S.t = ((m.t % H) + H) % H;           // восстановленный момент мог уйти за горизонт
+      S.playing = m.playing;
+      if (first) { renderDay(); toast(m.restored ? 'Продолжаю с момента инженерного вида' : 'Следую за инженерным видом', 'ok'); }
     },
     onConfig: d => {
       if (!d || d === lastDiff) return;
