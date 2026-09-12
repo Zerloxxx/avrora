@@ -264,7 +264,7 @@ export async function importFile(file) {
   catch (e) { toast(`<b>Файл не разобран как JSON.</b><ul><li>${e.message}</li></ul>`, 'error', 8000); return; }
   const errors = validate(raw);
   if (errors.length) {
-    toast(`<b>Сценарий не загружен — исправьте данные:</b><ul>${errors.slice(0, 8).map(x => `<li>${x}</li>`).join('')}${errors.length > 8 ? `<li>… и ещё ${errors.length - 8}</li>` : ''}</ul>`, 'error', 12000);
+    toast(`<b>Сценарий не загружен — исправьте данные:</b><ul>${errors.slice(0, 12).map(x => `<li>${x}</li>`).join('')}${errors.length > 12 ? `<li>… и ещё ${errors.length - 12}</li>` : ''}</ul>`, 'error', 12000);
     return;
   }
   loadScenario(raw, '__custom__');

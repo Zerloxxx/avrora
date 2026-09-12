@@ -188,20 +188,30 @@ export function snapshot(s, t) {
   return { t, pos, active, failed, adj, isl, ground, eclipsed };
 }
 
-// Кратчайший маршрут клиент → спутники → шлюз (BFS по числу хопов).
-export function findRoute(s, snap, clientId, prevRoute = null) {
+/* Общая подготовка для любой стратегии: откуда можно начать, чем закончить и почему нельзя.
+   banned — аппараты, которые запрещено использовать (нужно для анализа резервных путей). */
+function routeEnds(s, snap, clientId, banned) {
   const c = snap.ground[clientId];
-  if (!c || c.visible.length === 0) return { path: null, reason: 'no_sat' };
-  // «липкая» маршрутизация: прежний маршрут сохраняется, пока все его звенья существуют
-  if (prevRoute?.path && routeValid(snap, prevRoute, clientId)) return { path: prevRoute.path, gateway: prevRoute.gateway, reason: null, kept: true };
+  const free = k => !banned || !banned.has(k);
+  if (!c || c.visible.length === 0) return { reason: 'no_sat' };
+  const start = c.visible.filter(free);
+  if (!start.length) return { reason: 'no_sat' };
   const gateways = s.ground_sites.filter(g => g.role === 'gateway');
-  if (gateways.every(g => snap.ground[g.id].offline)) return { path: null, reason: 'gw_offline' };
+  if (gateways.every(g => snap.ground[g.id].offline)) return { reason: 'gw_offline' };
   const target = new Map();
-  for (const g of gateways) for (const k of snap.ground[g.id].visible) if (!target.has(k)) target.set(k, g.id);
-  if (target.size === 0) return { path: null, reason: 'no_gw_contact' };
+  for (const g of gateways) for (const k of snap.ground[g.id].visible) if (free(k) && !target.has(k)) target.set(k, g.id);
+  if (target.size === 0) return { reason: 'no_gw_contact' };
+  return { client: c, start, target, free };
+}
+
+// Минимум переходов: поиск в ширину по графу «спутники + ISL».
+function bfsRoute(s, snap, clientId, banned = null) {
+  const ends = routeEnds(s, snap, clientId, banned);
+  if (ends.reason) return { path: null, reason: ends.reason };
+  const { start, target, free } = ends;
   const prev = new Array(snap.pos.length).fill(-2);
   const queue = [];
-  for (const k of c.visible) { prev[k] = -1; queue.push(k); }
+  for (const k of start) { prev[k] = -1; queue.push(k); }
   for (let qi = 0; qi < queue.length; qi++) {
     const k = queue[qi];
     if (target.has(k)) {
@@ -209,9 +219,68 @@ export function findRoute(s, snap, clientId, prevRoute = null) {
       for (let x = k; x !== -1; x = prev[x]) path.unshift(x);
       return { path, gateway: target.get(k), reason: null };
     }
-    for (const nb of snap.adj[k]) if (prev[nb] === -2) { prev[nb] = k; queue.push(nb); }
+    for (const nb of snap.adj[k]) if (prev[nb] === -2 && free(nb)) { prev[nb] = k; queue.push(nb); }
   }
   return { path: null, reason: 'net_split' };
+}
+
+const dist3 = (a, b) => Math.hypot(a.x - b.x, a.y - b.y, a.z - b.z);
+
+/* Минимум задержки: Дейкстра по геометрической длине линий, включая две наземные.
+   Аппаратов десятки, поэтому очередь с приоритетом не нужна — O(N²) достаточно. */
+function latencyRoute(s, snap, clientId, banned = null) {
+  const ends = routeEnds(s, snap, clientId, banned);
+  if (ends.reason) return { path: null, reason: ends.reason };
+  const { client, start, target, free } = ends;
+  const N = snap.pos.length;
+  const d = new Float64Array(N).fill(Infinity);
+  const prev = new Int32Array(N).fill(-1);
+  const done = new Uint8Array(N);
+  for (const k of start) d[k] = dist3(client.pos, snap.pos[k]);
+  for (;;) {
+    let k = -1, best = Infinity;
+    for (let i = 0; i < N; i++) if (!done[i] && d[i] < best) { best = d[i]; k = i; }
+    if (k === -1) break;
+    done[k] = 1;
+    for (const nb of snap.adj[k]) {
+      if (done[nb] || !free(nb)) continue;
+      const alt = d[k] + dist3(snap.pos[k], snap.pos[nb]);
+      if (alt < d[nb]) { d[nb] = alt; prev[nb] = k; }
+    }
+  }
+  let endK = -1, endG = null, endCost = Infinity;
+  for (const [k, gid] of target) {
+    if (!Number.isFinite(d[k])) continue;
+    const cost = d[k] + dist3(snap.pos[k], snap.ground[gid].pos);
+    if (cost < endCost) { endCost = cost; endK = k; endG = gid; }
+  }
+  if (endK === -1) return { path: null, reason: 'net_split' };
+  const path = [];
+  for (let x = endK; x !== -1; x = prev[x]) path.unshift(x);
+  return { path, gateway: endG, reason: null };
+}
+
+/* Стратегии поиска и обновления маршрута. Кейс оставляет выбор команде
+   («команда самостоятельно выбирает способ поиска и обновления маршрутов»),
+   поэтому выбор обосновывается сравнением на одной и той же сетке — routeStrategies(). */
+export const STRATEGIES = {
+  sticky: { name: 'липкий BFS', note: 'держим прежний маршрут, пока живы все его звенья; иначе — BFS заново', sticky: true, find: bfsRoute },
+  minhop: { name: 'минимум переходов', note: 'BFS заново на каждом шаге, прошлое не учитывается', sticky: false, find: bfsRoute },
+  latency: { name: 'минимум задержки', note: 'Дейкстра по длине линий: короче сигнал, но маршрут меняется чаще', sticky: false, find: latencyRoute },
+};
+
+/* Маршрут клиент → спутники → шлюз. По умолчанию «липкая» стратегия: прежний путь
+   сохраняется, пока все его звенья существуют, — так считаются переключения. */
+export function findRoute(s, snap, clientId, prevRoute = null, strategy = 'sticky') {
+  const st = STRATEGIES[strategy] || STRATEGIES.sticky;
+  if (st.sticky && prevRoute?.path && routeValid(snap, prevRoute, clientId))
+    return { path: prevRoute.path, gateway: prevRoute.gateway, reason: null, kept: true };
+  return st.find(s, snap, clientId, null);
+}
+
+// Маршрут в обход перечисленных аппаратов — основа анализа резервных путей.
+export function routeAvoiding(s, snap, clientId, banned) {
+  return bfsRoute(s, snap, clientId, banned);
 }
 
 // Длина маршрута в км: пункт → спутники → шлюз.
@@ -244,9 +313,11 @@ export const timeGrid = (s, stepMul = 1) => {
   return { step, steps: Math.ceil(s.environment.horizon_s / step) };
 };
 
-// Доступность за весь горизонт для каждого клиента.
-// stepMul > 1 — грубая сетка (для перебора вариантов в оптимизаторе).
-export function computeAvailability(s, stepMul = 1) {
+/* Доступность за весь горизонт для каждого клиента.
+   stepMul > 1 — грубая сетка (для перебора вариантов в оптимизаторе).
+   strategy — стратегия маршрутизации; метрики считаются одним и тем же кодом,
+   поэтому стратегии сравнимы между собой напрямую (routeStrategies). */
+export function computeAvailability(s, stepMul = 1, { strategy = 'sticky' } = {}) {
   const e = s.environment;
   const { step, steps } = timeGrid(s, stepMul);
   const clients = s.ground_sites.filter(g => g.role === 'client');
@@ -256,7 +327,7 @@ export function computeAvailability(s, stepMul = 1) {
   for (let k = 0; k < steps; k++) {
     const snap = snapshot(s, k * step);
     for (const c of clients) {
-      const r = findRoute(s, snap, c.id, prevRoute[c.id]);
+      const r = findRoute(s, snap, c.id, prevRoute[c.id], strategy);
       prevRoute[c.id] = r.path ? r : null;
       const row = result[c.id];
       row.vis[k] = snap.ground[c.id].visible.length > 0 ? 1 : 0;
@@ -313,56 +384,88 @@ export function score(avail) {
   return minAv * 1000 + meanAv * 100 + vis * 10 - maxGap * 0.5 - hops * 0.1;
 }
 
-// ---------- проверка сценария (порт validate() из geometry.py) ----------
+// ---------- проверка сценария ----------
 const finite = x => typeof x === 'number' && Number.isFinite(x);
 
+/* Однотипные ошибки сворачиваются в одну строку: файл на 48 аппаратов с одной опечаткой
+   в id плоскости иначе даёт 16 одинаковых сообщений, и они вытесняют из списка всё остальное. */
+const PLURAL = { 'Спутник': 'аппаратов', 'Плоскость': 'плоскостей', 'Пункт': 'пунктов' };
+function collapseErrors(errors) {
+  const groups = new Map();
+  for (const m of errors) {
+    const key = m.replace(/^(Спутник|Плоскость|Пункт) [^:]+:/, '$1:').replace(/\[\d+\]/, '[]');
+    if (!groups.has(key)) groups.set(key, []);
+    groups.get(key).push(m);
+  }
+  return [...groups.values()].map(list => {
+    if (list.length === 1) return list[0];
+    const noun = PLURAL[list[0].match(/^(Спутник|Плоскость|Пункт) /)?.[1]] || 'записей';
+    return `${list[0]} (и ещё ${list.length - 1} ${noun} с этой же ошибкой)`;
+  });
+}
+
+/* Проверка сценария (порт validate() из geometry.py, расширенный).
+   Принцип: ни одна ошибка не прекращает проверку — пользователь должен увидеть весь список
+   и починить файл за один проход. Поэтому раздел проверяется, только если он вообще есть,
+   а диапазон значения — только если само значение оказалось числом. */
 export function validate(s) {
   const errors = [];
   const err = m => errors.push(m);
   if (!s || typeof s !== 'object') return ['Файл не является JSON-объектом'];
   if (s.schema_version !== 'cosmo-A-1.0') err(`schema_version должен быть "cosmo-A-1.0" (сейчас: ${JSON.stringify(s.schema_version)})`);
   const e = s.environment, d = s.design;
-  if (!e || typeof e !== 'object') { err('Отсутствует раздел environment'); return errors; }
-  if (!d || typeof d !== 'object') { err('Отсутствует раздел design'); return errors; }
-  for (const key of ['altitude_km', 'inclination_deg', 'earth_angle0_deg', 'horizon_s', 'step_s', 'min_elevation_deg', 'isl_range_km', 'target_availability'])
-    if (!finite(e[key])) err(`environment.${key}: нужно конечное число`);
-  if (errors.length) return errors;
-  if (!(200 <= e.altitude_km && e.altitude_km <= 1200)) err('environment.altitude_km: допустимо 200…1200 км');
-  if (!(0 < e.inclination_deg && e.inclination_deg <= 180)) err('environment.inclination_deg: допустимо (0…180]');
-  if (!Number.isInteger(e.step_s) || !Number.isInteger(e.horizon_s)) err('environment.step_s и horizon_s должны быть целыми секундами');
-  else if (!(0 < e.step_s && e.step_s <= e.horizon_s && e.horizon_s <= 172800 && e.horizon_s % e.step_s === 0))
-    err('environment: требуется 0 < step_s ≤ horizon_s ≤ 172800 и horizon_s кратен step_s');
-  if (!(0 <= e.min_elevation_deg && e.min_elevation_deg < 90)) err('environment.min_elevation_deg: допустимо [0…90)');
-  if (!(0 < e.isl_range_km && e.isl_range_km <= 10000)) err('environment.isl_range_km: допустимо (0…10000]');
-  if (!(0 <= e.target_availability && e.target_availability <= 1)) err('environment.target_availability: допустимо 0…1');
+  const hasEnv = !!e && typeof e === 'object', hasDesign = !!d && typeof d === 'object';
+  if (!hasEnv) err('Отсутствует раздел environment');
+  if (!hasDesign) err('Отсутствует раздел design');
 
-  if (!Array.isArray(d.planes) || !d.planes.length) err('design.planes: нужен непустой список плоскостей');
-  const planeIds = new Set();
-  for (const p of d.planes || []) {
-    if (planeIds.has(p.id)) err(`design.planes: дублируется id "${p.id}"`);
-    planeIds.add(p.id);
-    for (const k of ['raan_deg', 'phase_deg'])
-      if (!(finite(p[k]) && 0 <= p[k] && p[k] < 360)) err(`Плоскость ${p.id}: ${k} должен быть числом в [0…360)`);
-    if (p.inclination_deg !== undefined && !(finite(p.inclination_deg) && 0 < p.inclination_deg && p.inclination_deg <= 180))
-      err(`Плоскость ${p.id}: inclination_deg должен быть числом в (0…180]`);
+  if (hasEnv) {
+    for (const key of ['altitude_km', 'inclination_deg', 'earth_angle0_deg', 'horizon_s', 'step_s', 'min_elevation_deg', 'isl_range_km', 'target_availability'])
+      if (!finite(e[key])) err(`environment.${key}: нужно конечное число`);
+    if (finite(e.altitude_km) && !(200 <= e.altitude_km && e.altitude_km <= 1200)) err('environment.altitude_km: допустимо 200…1200 км');
+    if (finite(e.inclination_deg) && !(0 < e.inclination_deg && e.inclination_deg <= 180)) err('environment.inclination_deg: допустимо (0…180]');
+    if (finite(e.step_s) && finite(e.horizon_s)) {
+      if (!Number.isInteger(e.step_s) || !Number.isInteger(e.horizon_s)) err('environment.step_s и horizon_s должны быть целыми секундами');
+      else if (!(0 < e.step_s && e.step_s <= e.horizon_s && e.horizon_s <= 172800 && e.horizon_s % e.step_s === 0))
+        err('environment: требуется 0 < step_s ≤ horizon_s ≤ 172800 и horizon_s кратен step_s');
+    }
+    if (finite(e.min_elevation_deg) && !(0 <= e.min_elevation_deg && e.min_elevation_deg < 90)) err('environment.min_elevation_deg: допустимо [0…90)');
+    if (finite(e.isl_range_km) && !(0 < e.isl_range_km && e.isl_range_km <= 10000)) err('environment.isl_range_km: допустимо (0…10000]');
+    if (finite(e.target_availability) && !(0 <= e.target_availability && e.target_availability <= 1)) err('environment.target_availability: допустимо 0…1');
   }
-  if (!Array.isArray(d.satellites) || !d.satellites.length) err('design.satellites: нужен непустой список спутников');
-  const satIds = new Set();
-  for (const x of d.satellites || []) {
-    if (satIds.has(x.id)) err(`design.satellites: дублируется id "${x.id}"`);
-    satIds.add(x.id);
-    if (!planeIds.has(x.plane_id)) err(`Спутник ${x.id}: неизвестная плоскость "${x.plane_id}"`);
-    if (!(Number.isInteger(x.launch_batch) && x.launch_batch >= 1)) err(`Спутник ${x.id}: launch_batch должен быть целым ≥ 1 (в кейсе — 1, 2 или 3)`);
-    if (!finite(x.slot_deg)) err(`Спутник ${x.id}: slot_deg должен быть числом`);
+
+  const planeIds = new Set(), satIds = new Set();
+  if (hasDesign) {
+    const planes = Array.isArray(d.planes) ? d.planes : [];
+    if (!planes.length) err('design.planes: нужен непустой список плоскостей');
+    for (const p of planes) {
+      if (!p || typeof p !== 'object') { err('design.planes: элемент списка не является объектом'); continue; }
+      if (planeIds.has(p.id)) err(`design.planes: дублируется id "${p.id}"`);
+      planeIds.add(p.id);
+      for (const k of ['raan_deg', 'phase_deg'])
+        if (!(finite(p[k]) && 0 <= p[k] && p[k] < 360)) err(`Плоскость ${p.id}: ${k} должен быть числом в [0…360)`);
+      if (p.inclination_deg !== undefined && !(finite(p.inclination_deg) && 0 < p.inclination_deg && p.inclination_deg <= 180))
+        err(`Плоскость ${p.id}: inclination_deg должен быть числом в (0…180]`);
+    }
+    const sats = Array.isArray(d.satellites) ? d.satellites : [];
+    if (!sats.length) err('design.satellites: нужен непустой список спутников');
+    for (const x of sats) {
+      if (!x || typeof x !== 'object') { err('design.satellites: элемент списка не является объектом'); continue; }
+      if (satIds.has(x.id)) err(`design.satellites: дублируется id "${x.id}"`);
+      satIds.add(x.id);
+      if (!planeIds.has(x.plane_id)) err(`Спутник ${x.id}: неизвестная плоскость "${x.plane_id}"`);
+      if (!(Number.isInteger(x.launch_batch) && x.launch_batch >= 1)) err(`Спутник ${x.id}: launch_batch должен быть целым ≥ 1 (в кейсе — 1, 2 или 3)`);
+      if (!finite(x.slot_deg)) err(`Спутник ${x.id}: slot_deg должен быть числом`);
+    }
+    const nb = Math.max(1, ...sats.map(x => x?.launch_batch).filter(Number.isInteger));
+    if (!Number.isInteger(d.launch_stage) || d.launch_stage < 1 || d.launch_stage > nb) err(`design.launch_stage должен быть целым от 1 до ${nb} (число очередей запуска)`);
   }
-  const nb = Math.max(1, ...(d.satellites || []).map(x => x.launch_batch).filter(Number.isInteger));
-  if (!Number.isInteger(d.launch_stage) || d.launch_stage < 1 || d.launch_stage > nb) err(`design.launch_stage должен быть целым от 1 до ${nb} (число очередей запуска)`);
 
   const ground = s.ground_sites;
   if (!Array.isArray(ground)) err('Отсутствует список ground_sites');
   else {
     const gids = new Set();
     for (const g of ground) {
+      if (!g || typeof g !== 'object') { err('ground_sites: элемент списка не является объектом'); continue; }
       if (gids.has(g.id)) err(`ground_sites: дублируется id "${g.id}"`);
       if (satIds.has(g.id)) err(`ground_sites: id "${g.id}" совпадает с id спутника`);
       gids.add(g.id);
@@ -372,19 +475,22 @@ export function validate(s) {
       if (g.horizon_mask !== undefined && !(Array.isArray(g.horizon_mask) && g.horizon_mask.length >= 4 && g.horizon_mask.every(v => finite(v) && 0 <= v && v < 90)))
         err(`Пункт ${g.id}: horizon_mask — список углов закрытия по азимутам (≥ 4 секторов, каждый 0…90°)`);
     }
-    if (!ground.some(g => g.role === 'client')) err('Нужен хотя бы один клиентский пункт (role: client)');
-    if (!ground.some(g => g.role === 'gateway')) err('Нужен хотя бы один шлюз (role: gateway)');
-    const gwIds = new Set(ground.filter(g => g.role === 'gateway').map(g => g.id));
+    if (!ground.some(g => g?.role === 'client')) err('Нужен хотя бы один клиентский пункт (role: client)');
+    if (!ground.some(g => g?.role === 'gateway')) err('Нужен хотя бы один шлюз (role: gateway)');
+    const gwIds = new Set(ground.filter(g => g?.role === 'gateway').map(g => g.id));
+    // горизонт неизвестен — верхнюю границу окон не проверяем, но остальное в этих записях проверить обязаны
+    const H = hasEnv && finite(e.horizon_s) ? e.horizon_s : Infinity;
     for (const [field, key, valid] of [['failures', 'satellite_id', satIds], ['gateway_outages', 'gateway_id', gwIds]]) {
       if (!Array.isArray(s[field])) { err(`Отсутствует список ${field}`); continue; }
       s[field].forEach((f, i) => {
+        if (!f || typeof f !== 'object') { err(`${field}[${i}]: запись не является объектом`); return; }
         if (!valid.has(f[key])) err(`${field}[${i}]: неизвестный ${key} "${f[key]}"`);
-        if (!(finite(f.start_s) && finite(f.end_s) && 0 <= f.start_s && f.start_s < f.end_s && f.end_s <= e.horizon_s))
+        if (!(finite(f.start_s) && finite(f.end_s) && 0 <= f.start_s && f.start_s < f.end_s && f.end_s <= H))
           err(`${field}[${i}]: требуется 0 ≤ start_s < end_s ≤ horizon_s`);
       });
     }
   }
-  return errors;
+  return collapseErrors(errors);
 }
 
 // ---------- инструменты анализа ----------
@@ -432,10 +538,13 @@ function slotPeriod(s) {
 }
 
 // Уязвимость: выводим каждый запущенный спутник на весь горизонт и смотрим просадку.
+/* Уязвимые аппараты. Кроме просадки худшего пункта возвращаем разбивку по пунктам:
+   критерий требует показать, «какие направления связи затронуты», а не только общий минимум. */
 export function vulnerableSatellites(scenario, { stepMul = 1, onProgress } = {}) {
   const s = JSON.parse(JSON.stringify(scenario));
   const base = computeAvailability(s, stepMul);
-  const baseMin = Math.min(...Object.values(base).map(r => r.availability));
+  const baseByClient = Object.fromEntries(Object.entries(base).map(([c, r]) => [c, r.availability]));
+  const baseMin = Math.min(...Object.values(baseByClient));
   const sats = s.design.satellites.filter(x => x.launch_batch <= s.design.launch_stage);
   const out = [];
   sats.forEach((x, i) => {
@@ -445,11 +554,15 @@ export function vulnerableSatellites(scenario, { stepMul = 1, onProgress } = {})
     s.failures = failures;
     const minAv = Math.min(...Object.values(a).map(r => r.availability));
     const maxGap = Math.max(...Object.values(a).map(r => r.maxGapMin));
-    out.push({ id: x.id, plane: x.plane_id, minAvailability: minAv, drop: baseMin - minAv, maxGapMin: maxGap });
+    const perClient = Object.fromEntries(Object.entries(a).map(([c, r]) =>
+      [c, { availability: r.availability, drop: baseByClient[c] - r.availability, maxGapMin: r.maxGapMin }]));
+    const hit = Object.entries(perClient).filter(([, v]) => v.drop > 1e-9).sort((p, q) => q[1].drop - p[1].drop);
+    out.push({ id: x.id, plane: x.plane_id, minAvailability: minAv, drop: baseMin - minAv, maxGapMin: maxGap,
+      perClient, affected: hit.map(([c]) => c), worstClient: hit[0]?.[0] ?? null, worstClientDrop: hit[0]?.[1].drop ?? 0 });
     onProgress?.(i + 1, sats.length);
   });
   out.sort((a, b) => b.drop - a.drop || b.maxGapMin - a.maxGapMin);
-  return { baseMin, items: out };
+  return { baseMin, baseByClient, items: out };
 }
 
 const minAvail = a => Math.min(...Object.values(a).map(r => r.availability));
@@ -598,7 +711,16 @@ export function pairFailures(s, { stepMul = 3, onProgress } = {}) {
   const ids = c.design.satellites.filter(x => x.launch_batch <= c.design.launch_stage).map(x => x.id);
   const n = ids.length, H = c.environment.horizon_s, baseF = c.failures;
   const target = c.environment.target_availability;
-  const evalWith = list => { c.failures = [...baseF, ...list.map(id => ({ satellite_id: id, start_s: 0, end_s: H }))]; const a = computeAvailability(c, stepMul); c.failures = baseF; return { minAv: minAvail(a), maxGap: maxGapOf(a) }; };
+  // кроме минимума возвращаем пункт, на котором этот минимум достигнут: нужно, чтобы показать,
+  // какое направление связи страдает от конкретного отказа, а не только «худший стало N%»
+  const evalWith = list => {
+    c.failures = [...baseF, ...list.map(id => ({ satellite_id: id, start_s: 0, end_s: H }))];
+    const a = computeAvailability(c, stepMul);
+    c.failures = baseF;
+    const worst = Object.entries(a).sort((p, q) => p[1].availability - q[1].availability)[0];
+    return { minAv: minAvail(a), maxGap: maxGapOf(a), worstClient: worst?.[0] ?? null,
+      byClient: Object.fromEntries(Object.entries(a).map(([id, r]) => [id, r.availability])) };
+  };
   const baseMin = evalWith([]).minAv;
   const single = ids.map(id => evalWith([id]));
   const total = n * (n - 1) / 2; let done = 0;
@@ -609,7 +731,7 @@ export function pairFailures(s, { stepMul = 3, onProgress } = {}) {
     for (let j = i + 1; j < n; j++) {
       const r = evalWith([ids[i], ids[j]]);
       matrix[i * n + j] = matrix[j * n + i] = r.minAv;
-      pairs.push({ a: ids[i], b: ids[j], minAv: r.minAv, maxGap: r.maxGap });
+      pairs.push({ a: ids[i], b: ids[j], minAv: r.minAv, maxGap: r.maxGap, worstClient: r.worstClient });
       done++; if (done % 20 === 0) onProgress?.(done, total);
     }
   }
@@ -617,7 +739,13 @@ export function pairFailures(s, { stepMul = 3, onProgress } = {}) {
   const n1Min = Math.min(...single.map(x => x.minAv)), n2Min = pairs.length ? pairs[0].minAv : n1Min;
   const badSingles = ids.filter((_, i) => single[i].minAv < target).length;
   const badPairs = pairs.filter(p => p.minAv < target).length;
+  // сколько пар бьёт по каждому направлению связи
+  const byClient = {};
+  for (const p of pairs) if (p.minAv < target && p.worstClient) byClient[p.worstClient] = (byClient[p.worstClient] || 0) + 1;
+  const worstSingles = ids.map((id, i) => ({ id, minAv: single[i].minAv, worstClient: single[i].worstClient }))
+    .sort((a, b) => a.minAv - b.minAv).slice(0, 8);
   return { ids, matrix: Array.from(matrix), baseMin, n1Min, n2Min, badSingles, badPairs, worstPairs: pairs.slice(0, 8), target,
+    worstSingles, badPairsByClient: byClient,
     tolerance: baseMin < target ? 0 : badSingles ? 0 : badPairs ? 1 : 2 };
 }
 
@@ -869,4 +997,82 @@ export function layoutCompare(scenario, { stepMul = 1, planes = [4, 6], onProgre
   const rank = o => o.stages.slice(0, -1).reduce((a, st, i) => a + st.min / (i + 1), 0);
   const bestId = options.slice().sort((a, b) => rank(b) - rank(a))[0].id;
   return { options: options.map(({ design, ...o }) => o), bestId, batches: B, sizes, target: base.environment.target_availability };
+}
+
+/* Сравнение стратегий маршрутизации на одной и той же сетке.
+   Отвечает на вопрос эксперта «почему выбран такой алгоритм»: доступность у всех стратегий
+   обязана совпасть (путь либо существует, либо нет — это свойство сети, не алгоритма),
+   а расходятся они в числе переключений, длине маршрута и задержке. */
+export function routeStrategies(scenario, { stepMul = 1, onProgress } = {}) {
+  const keys = Object.keys(STRATEGIES);
+  const target = scenario.environment.target_availability;
+  const rows = [];
+  keys.forEach((key, i) => {
+    const av = computeAvailability(scenario, stepMul, { strategy: key });
+    const list = Object.entries(av);
+    const n = list.length;
+    rows.push({
+      key, name: STRATEGIES[key].name, note: STRATEGIES[key].note,
+      minAvailability: Math.min(...list.map(([, r]) => r.availability)),
+      meanAvailability: list.reduce((a, [, r]) => a + r.availability, 0) / n,
+      maxGapMin: Math.max(...list.map(([, r]) => r.maxGapMin)),
+      handovers: list.reduce((a, [, r]) => a + r.handovers, 0),
+      avgHops: list.reduce((a, [, r]) => a + r.avgHops, 0) / n,
+      avgLatencyMs: list.reduce((a, [, r]) => a + r.avgLatencyMs, 0) / n,
+      maxLatencyMs: Math.max(...list.map(([, r]) => r.maxLatencyMs)),
+      perClient: Object.fromEntries(list.map(([id, r]) => [id, { availability: r.availability, handovers: r.handovers, avgHops: r.avgHops, avgLatencyMs: r.avgLatencyMs, maxGapMin: r.maxGapMin }])),
+    });
+    onProgress?.(i + 1, keys.length);
+  });
+  const pick = (f, dir = 1) => rows.reduce((a, b) => (f(b) - f(a)) * dir > 0 ? b : a);
+  const sameAvailability = rows.every(r => Math.abs(r.minAvailability - rows[0].minAvailability) < 1e-9);
+  return {
+    rows, target, sameAvailability,
+    best: { stability: pick(r => r.handovers, -1).key, hops: pick(r => r.avgHops, -1).key, latency: pick(r => r.avgLatencyMs, -1).key },
+    chosen: 'sticky',
+  };
+}
+
+/* Анализ резервных путей для одного пункта: есть ли замена текущему маршруту на том же шаге.
+   Шаг «с полным резервом», если существует путь, не использующий ни одного аппарата основного
+   (вершинно-непересекающийся). Аппарат «критичный на шаге», если без него маршрута нет вовсе. */
+export function backupPaths(scenario, { clientId, stepMul = 1, onProgress } = {}) {
+  const s = scenario;
+  const { step, steps } = timeGrid(s, stepMul);
+  const client = clientId || s.ground_sites.find(g => g.role === 'client')?.id;
+  const satId = k => s.design.satellites[k].id;
+  let withRoute = 0, disjoint = 0, spof = 0, oneAccess = 0, chainCritical = 0;
+  const critical = new Map();       // id аппарата → на скольких шагах он единственная точка отказа
+  for (let k = 0; k < steps; k++) {
+    const snap = snapshot(s, k * step);
+    const r = routeAvoiding(s, snap, client, null);
+    if (!r.path) { onProgress?.(k + 1, steps); continue; }
+    withRoute++;
+    if (snap.ground[client].visible.length === 1) oneAccess++;
+    const primary = new Set(r.path);
+    if (routeAvoiding(s, snap, client, primary).path) disjoint++;
+    let hasCritical = false, chainBottleneck = false;
+    for (const idx of r.path) {
+      if (routeAvoiding(s, snap, client, new Set([idx])).path) continue;
+      hasCritical = true;
+      // первый аппарат незаменим просто потому, что над пунктом больше никого нет — это другая проблема,
+      // она лечится покрытием; незаменимое звено в середине цепочки лечится второй независимой цепочкой
+      if (idx !== r.path[0]) chainBottleneck = true;
+      const id = satId(idx);
+      critical.set(id, (critical.get(id) || 0) + 1);
+    }
+    if (hasCritical) spof++;
+    if (chainBottleneck) chainCritical++;
+    onProgress?.(k + 1, steps);
+  }
+  const items = [...critical.entries()].map(([id, n]) => ({ id, steps: n, shareOfDay: n / steps, minutes: n * step / 60 }))
+    .sort((a, b) => b.steps - a.steps);
+  return {
+    clientId: client, step_s: step, steps, withRoute,
+    disjointShare: withRoute ? disjoint / withRoute : 0,       // доля шагов с полностью независимым обходным путём
+    spofShare: withRoute ? spof / withRoute : 0,               // доля шагов, где в маршруте есть незаменимый аппарат
+    oneAccessShare: withRoute ? oneAccess / withRoute : 0,     // над пунктом виден ровно один аппарат — резерва не может быть
+    chainCriticalShare: withRoute ? chainCritical / withRoute : 0,  // незаменимое звено в середине цепочки
+    critical: items,
+  };
 }

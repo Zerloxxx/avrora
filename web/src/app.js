@@ -6,7 +6,7 @@ import { overlay, zoomBy, zoomTo, applyCamera, pickLatLon, getLastProj, startLoo
 import { renderStatus, openCompare } from './panels.js';
 import { startBroadcaster } from './sync.js';
 import { renderDesign, renderLayouts, runAnalysis, renderCoverage, renderDeployment, renderBatches, renderPairs, renderSpares, renderMonteCarlo,
-  renderQuality, buildReport, runOptimize, runVulnerable, toggleCoverageOverlay } from './analysis.js';
+  renderStrategies, renderBackup, renderQuality, buildReport, runOptimize, runVulnerable, toggleCoverageOverlay } from './analysis.js';
 
 // ---------- события ----------
 const enterWorkspace = () => document.body.classList.add('workspace');
@@ -57,6 +57,8 @@ $('#an-run-layouts').onclick = () => runAnalysis('layouts', {}, '#an-deploy-out'
 $('#an-run-pairs').onclick = () => runAnalysis('pairs', {}, '#an-resilience-out', (r, out) => { out.innerHTML = ''; renderPairs(r, out); });
 $('#an-run-spares').onclick = () => runAnalysis('spares', {}, '#an-resilience-out', renderSpares);
 $('#an-run-mc').onclick = () => runAnalysis('montecarlo', { pFail: (+$('#an-mc-p').value || 5) / 100, runs: +$('#an-mc-runs').value || 300 }, '#an-resilience-out', renderMonteCarlo);
+$('#an-run-backup').onclick = () => runAnalysis('backup', { clientId: state.clientId }, '#an-resilience-out', renderBackup);
+$('#an-run-strategies').onclick = () => runAnalysis('strategies', {}, '#an-strategies-out', renderStrategies);
 $('#an-eclipse').onchange = ev => setEclipseIslOff(ev.target.checked);
 $('#an-run-report').onclick = buildReport;
 $('#export-report').onclick = buildReport;

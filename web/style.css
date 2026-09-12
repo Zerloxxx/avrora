@@ -494,6 +494,38 @@ body.workspace .hero { opacity: 0; pointer-events: none; transform: translate(-5
 .cmp-note { margin-top: 14px; font-size: 13px; color: #c9d0e3; line-height: 1.6; }
 .cmp-note b { color: var(--text); }
 
+/* вердикт сравнения — первое, что видно в окне: кого брать и почему */
+.cmp-verdict {
+  margin-bottom: 18px;
+  padding: 16px 18px;
+  border: 1px solid var(--line);
+  border-left: 2px solid var(--accent);
+  border-radius: 12px;
+  background: rgba(79, 209, 255, 0.045);
+  font-size: 13px;
+  line-height: 1.6;
+  color: #c9d0e3;
+}
+.cmp-verdict p { margin: 8px 0 0; max-width: 82ch; }
+.cmp-verdict b { color: var(--text); }
+.cmp-verdict .good { color: var(--ok); }
+.cmp-verdict .bad { color: var(--bad); }
+.cmp-pick { display: flex; align-items: baseline; gap: 10px; }
+.cmp-pick .l { font-size: 11px; color: var(--muted); }
+.cmp-pick b { font: 600 19px var(--font-display, var(--font-body)); color: var(--text); }
+.cmp-how { color: var(--muted); font-size: 11.5px; }
+.cmp-warn {
+  margin-bottom: 14px;
+  padding: 12px 14px;
+  border-radius: 10px;
+  border-left: 2px solid var(--route);
+  background: rgba(255, 209, 102, 0.08);
+  font-size: 13px;
+  line-height: 1.6;
+  color: var(--route);
+}
+.cmp-warn b { color: var(--route); }
+
 /* на стартовом экране подписи и маршрут приглушены, чтобы не спорить с заголовком */
 #overlay { transition: opacity .3s; }
 body:not(.workspace) #overlay { opacity: .45; }
@@ -546,6 +578,17 @@ body.placing #overlay { cursor: crosshair; }
 .an-out canvas.matrix { width: min(100%, 520px); height: auto; image-rendering: pixelated; border-radius: 6px; }
 .an-note { font-size: 13px; line-height: 1.6; color: #c9d0e3; max-width: 78ch; }
 .an-note b { color: var(--text); }
+.an-sub { margin-top: 3px; font-size: 11px; line-height: 1.45; color: var(--muted); max-width: 46ch; }
+.cmp tr.me td { background: rgba(79, 209, 255, 0.06); }
+
+/* результат посчитан на другой конфигурации — предупреждение, а не просто заметка */
+.an-note.an-stale {
+  margin-bottom: 12px;
+  padding: 9px 12px;
+  border-left: 2px solid var(--route);
+  background: rgba(255, 209, 102, 0.07);
+  color: var(--route);
+}
 .an-out .cmp { max-width: 900px; }
 .an-out .cmp td, .an-out .cmp th { white-space: normal; }
 .scale { display: flex; align-items: center; gap: 8px; font-size: 11px; color: var(--muted); }

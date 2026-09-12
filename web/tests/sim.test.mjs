@@ -5,7 +5,8 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { snapshot, findRoute, computeAvailability, validate, routeLengthKm, optimizePlanes, coverageGrid, pairFailures, timeGrid, C_LIGHT, contactWindows, skyView, uniformMask, siteMask, maskSector, planeInclination } from '../src/sim.js';
+import { snapshot, findRoute, computeAvailability, validate, routeLengthKm, optimizePlanes, coverageGrid, pairFailures, timeGrid, C_LIGHT, contactWindows, skyView, uniformMask, siteMask, maskSector, planeInclination,
+  routeStrategies, backupPaths, routeAvoiding, vulnerableSatellites, STRATEGIES } from '../src/sim.js';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const window = {};
@@ -252,4 +253,139 @@ test('наклонение на плоскость: своё значение м
   assert.ok(Math.hypot(a[p0].x-b[p0].x, a[p0].y-b[p0].y, a[p0].z-b[p0].z) > 100, 'плоскость с новым наклонением должна сдвинуться');
   assert.ok(Math.hypot(a[p1].x-b[p1].x, a[p1].y-b[p1].y, a[p1].z-b[p1].z) < 1e-6, 'остальные плоскости трогать нельзя');
   assert.deepEqual(validate(tilted), [], 'наклонение плоскости — допустимое расширение схемы');
+});
+
+// --- проверка сценария: список ошибок должен быть полным ---
+
+test('validate(): одна ошибка не скрывает остальные — список полный за один проход', () => {
+  const bad = clone(S['04_link_range']);
+  bad.schema_version = 'cosmo-B-2.0';        // ломает схему
+  bad.environment.altitude_km = 'пятьсот';   // раньше обрывало проверку здесь
+  bad.environment.min_elevation_deg = 95;
+  bad.ground_sites[0].lat_deg = 200;
+  bad.failures.push({ satellite_id: 'НЕТ-ТАКОГО', start_s: 500, end_s: 100 });
+  const errs = validate(bad);
+  const has = re => errs.some(x => re.test(x));
+  assert.ok(has(/schema_version/), 'схема');
+  assert.ok(has(/altitude_km/), 'нечисловая высота');
+  assert.ok(has(/min_elevation_deg/), 'угол возвышения за диапазоном');
+  assert.ok(has(/lat_deg/), 'широта пункта за диапазоном');
+  assert.ok(has(/неизвестный satellite_id/), 'отказ несуществующего аппарата');
+  assert.ok(has(/start_s < end_s/), 'перевёрнутый интервал отказа');
+});
+
+test('validate(): однотипные ошибки сворачиваются в одну строку с числом повторов', () => {
+  const bad = clone(full);
+  bad.design.planes[1].id = bad.design.planes[0].id;   // 16 аппаратов теряют свою плоскость
+  const errs = validate(bad);
+  const line = errs.find(x => /неизвестная плоскость/.test(x));
+  assert.ok(line, 'про неизвестную плоскость должно быть сказано');
+  assert.match(line, /и ещё \d+ аппаратов/, 'повторы сворачиваются, а не печатаются по одному');
+  assert.ok(errs.filter(x => /неизвестная плоскость/.test(x)).length === 1, 'одна строка на одну причину');
+  assert.ok(errs.some(x => /дублируется id/.test(x)), 'исходная причина тоже названа');
+});
+
+test('validate(): отсутствие environment не мешает проверить остальной файл', () => {
+  const bad = clone(full);
+  delete bad.environment;
+  const errs = validate(bad);
+  assert.ok(errs.some(x => /environment/.test(x)), 'про отсутствующий раздел сказано');
+  bad.ground_sites[0].role = 'мимо';
+  assert.ok(validate(bad).some(x => /role должен быть client или gateway/.test(x)), 'проверки пунктов продолжают работать');
+});
+
+// --- стратегии маршрутизации ---
+
+test('стратегии маршрутизации: доступность одинакова, различаются переключения и задержка', () => {
+  const res = routeStrategies(full, { stepMul: 6 });
+  assert.equal(res.rows.length, Object.keys(STRATEGIES).length, 'считаются все стратегии');
+  // путь либо существует на шаге, либо нет — это свойство сети, а не алгоритма поиска
+  assert.ok(res.sameAvailability, 'доступность обязана совпасть у всех стратегий');
+  const by = Object.fromEntries(res.rows.map(r => [r.key, r]));
+  for (const k of Object.keys(STRATEGIES))
+    assert.ok(Math.abs(by[k].minAvailability - by.sticky.minAvailability) < 1e-9, `${k}: доступность разошлась с липкой`);
+  assert.ok(by.sticky.handovers <= by.minhop.handovers, 'липкий маршрут не может переключаться чаще, чем поиск заново');
+  assert.ok(by.latency.avgLatencyMs <= by.minhop.avgLatencyMs + 1e-9, 'стратегия минимума задержки не должна быть медленнее BFS');
+  assert.ok(by.minhop.avgHops <= by.sticky.avgHops + 1e-9, 'минимум переходов не может давать более длинные цепочки, чем липкая');
+  assert.equal(res.best.stability, 'sticky', 'по переключениям выигрывает липкая стратегия');
+});
+
+test('стратегия минимума задержки даёт путь не длиннее, чем BFS, на том же шаге', () => {
+  const snap = snapshot(full, 43200);
+  const c = 'C65';
+  const km = r => routeLengthKm(snap, r.path, snap.ground[c].pos, snap.ground[r.gateway].pos);
+  const b = findRoute(full, snap, c, null, 'minhop');
+  const l = findRoute(full, snap, c, null, 'latency');
+  assert.ok(b.path && l.path, 'на полдень маршрут существует в обеих стратегиях');
+  assert.ok(km(l) <= km(b) + 1e-6, `минимум задержки: ${km(l).toFixed(1)} км должно быть ≤ ${km(b).toFixed(1)} км`);
+});
+
+// --- резервные пути ---
+
+test('резервные пути: независимый обход и незаменимый аппарат — взаимоисключающие состояния шага', () => {
+  const res = backupPaths(full, { clientId: 'C65', stepMul: 3 });
+  assert.ok(res.withRoute > 0 && res.withRoute <= res.steps);
+  for (const key of ['disjointShare', 'spofShare', 'oneAccessShare', 'chainCriticalShare'])
+    assert.ok(res[key] >= 0 && res[key] <= 1, `${key} — доля, должна лежать в [0…1]`);
+  // если существует путь в обход всех аппаратов основного, то отказ любого из них перекрывается
+  assert.ok(res.disjointShare + res.spofShare <= 1 + 1e-9, 'шаг не может быть одновременно с полным обходом и с незаменимым аппаратом');
+  assert.ok(res.chainCriticalShare <= res.spofShare + 1e-9, 'узкое звено в цепочке — подмножество незаменимых');
+  // первая очередь заведомо тоньше полной группировки
+  const first = backupPaths(S['02_first_launch'], { clientId: 'C65', stepMul: 3 });
+  assert.ok(first.disjointShare <= res.disjointShare, 'на 16 аппаратах резерва не может быть больше, чем на 48');
+});
+
+test('routeAvoiding(): запрет аппаратов маршрута заставляет искать другой путь или признать разрыв', () => {
+  const snap = snapshot(full, 43200);
+  const r = routeAvoiding(full, snap, 'C65', null);
+  assert.ok(r.path, 'базовый маршрут есть');
+  const alt = routeAvoiding(full, snap, 'C65', new Set(r.path));
+  if (alt.path) assert.ok(alt.path.every(k => !r.path.includes(k)), 'обходной путь не должен использовать запрещённые аппараты');
+  else assert.ok(['no_sat', 'no_gw_contact', 'net_split'].includes(alt.reason), 'иначе — внятная причина, почему обхода нет');
+});
+
+// --- разбивка отказов по направлениям связи ---
+
+test('уязвимые аппараты: перечислены ровно те направления, у которых доступность упала', () => {
+  const res = vulnerableSatellites(S['02_first_launch'], { stepMul: 6 });
+  const it = res.items[0];
+  assert.ok(it.affected.length > 0, 'у самого уязвимого аппарата обязаны быть затронутые пункты');
+  for (const [c, v] of Object.entries(it.perClient)) {
+    const listed = it.affected.includes(c);
+    assert.equal(listed, v.drop > 1e-9, `${c}: в списке затронутых ровно при фактической просадке`);
+    assert.ok(v.availability <= res.baseByClient[c] + 1e-9, `${c}: отказ аппарата не может поднять доступность`);
+  }
+  assert.equal(it.worstClient, Object.entries(it.perClient).sort((a, b) => b[1].drop - a[1].drop)[0][0], 'worstClient — пункт с наибольшей просадкой');
+});
+
+test('матрица N-1/N-2: для каждой опасной пары назван страдающий пункт', () => {
+  const res = pairFailures(S['02_first_launch'], { stepMul: 12 });
+  const clients = S['02_first_launch'].ground_sites.filter(g => g.role === 'client').map(g => g.id);
+  for (const p of res.worstPairs) assert.ok(clients.includes(p.worstClient), `пара ${p.a}+${p.b}: worstClient должен быть клиентским пунктом`);
+  for (const [c, n] of Object.entries(res.badPairsByClient)) {
+    assert.ok(clients.includes(c), 'разбивка только по клиентским пунктам');
+    assert.ok(n > 0 && n <= res.badPairs, 'число пар по направлению не больше общего числа опасных пар');
+  }
+  assert.equal(Object.values(res.badPairsByClient).reduce((a, b) => a + b, 0), res.badPairs, 'каждая опасная пара отнесена ровно к одному направлению');
+});
+
+// --- отпечаток конфигурации: по нему аналитика признаётся устаревшей ---
+
+test('hashScenario(): отпечаток меняется при любой правке, а не только при смене длины JSON', async () => {
+  const { hashScenario, state } = await import('../src/state.js');
+  state.scenarioId = '01_full_constellation';
+  const set = raans => { const s = clone(full); s.design.planes.forEach((p, i) => p.raan_deg = raans[i] ?? p.raan_deg); state.scenario = s; return hashScenario(); };
+  // 120 и 130 дают JSON одной длины — на этом прежний отпечаток по длине давал коллизию
+  const h120 = set([120, 60, 300]), h130 = set([130, 60, 300]);
+  assert.notEqual(h120, h130, 'raan 120 и 130 обязаны давать разные отпечатки');
+  // и разница действительно значимая: доступность расходится
+  const a120 = clone(full), a130 = clone(full);
+  a120.design.planes[0].raan_deg = 120; a120.design.planes[1].raan_deg = 60; a120.design.planes[2].raan_deg = 300;
+  a130.design.planes[0].raan_deg = 130; a130.design.planes[1].raan_deg = 60; a130.design.planes[2].raan_deg = 300;
+  const min = s => Math.min(...Object.values(computeAvailability(s, 6)).map(r => r.availability));
+  assert.ok(Math.abs(min(a120) - min(a130)) > 0.005, 'конфигурации действительно различаются по доступности');
+  assert.equal(set([120, 60, 300]), h120, 'одна и та же конфигурация — один и тот же отпечаток');
+  // смена сценария тоже меняет отпечаток при идентичном содержимом
+  state.scenarioId = 'другой';
+  assert.notEqual(hashScenario(), h120, 'отпечаток учитывает, из какого файла собрана конфигурация');
 });
