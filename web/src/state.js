@@ -73,5 +73,14 @@ export const heat = (v, target) => {
   return `rgb(${c[0]},${c[1]},${c[2]})`;
 };
 
-// Грубый отпечаток конфигурации — чтобы понять, что результат аналитики устарел.
-export const hashScenario = () => JSON.stringify(state.scenario).length + ':' + state.scenarioId + ':' + state.scenario.design.launch_stage;
+/* Отпечаток конфигурации: по нему результат аналитики признаётся устаревшим.
+   Считается по содержимому (FNV-1a), а не по длине JSON: raan 120 и 130 дают строку одной длины,
+   поэтому прежний вариант признавал результат свежим при разнице доступности в 3.7 п.п.
+   Порядок ключей в JSON влияет на отпечаток — это безопасная сторона ошибки:
+   лишний пересчёт, а не устаревшие числа в отчёте. */
+const fnv1a = str => {
+  let h = 0x811c9dc5;
+  for (let i = 0; i < str.length; i++) { h ^= str.charCodeAt(i); h = Math.imul(h, 0x01000193); }
+  return (h >>> 0).toString(36);
+};
+export const hashScenario = () => fnv1a(JSON.stringify(state.scenario)) + ':' + state.scenarioId;

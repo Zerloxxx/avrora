@@ -160,7 +160,7 @@ function drawRose(cv, mask) {
   g.closePath();
   g.fillStyle = mask ? 'rgba(126,231,135,0.35)' : 'rgba(255,255,255,0.12)'; g.fill();
   g.strokeStyle = mask ? '#7ee787' : 'rgba(255,255,255,0.4)'; g.stroke();
-  g.fillStyle = 'rgba(255,255,255,0.6)'; g.font = '8px Inter, sans-serif'; g.fillText('N', c - 2.5, 8);
+  g.fillStyle = 'rgba(255,255,255,0.6)'; g.font = '8px "Golos Text", sans-serif'; g.fillText('N', c - 2.5, 8);
 }
 
 // ---------- правая панель ----------
@@ -239,6 +239,56 @@ export function renderVariants() {
 }
 
 // ---------- сравнение вариантов ----------
+/* Вердикт сравнения: кого брать, насколько он лучше следующего, чем за это платим
+   и сопоставимы ли варианты вообще. Кейс требует сравнивать «на одном периоде расчёта»,
+   поэтому разные горизонт/шаг/сценарий — повод не доверять дельтам, а не мелочь. */
+function verdictHtml(vs, target, clients) {
+  const minOf = v => Math.min(...Object.values(v.summary).map(r => r.availability));
+  const gapOf = v => Math.max(...Object.values(v.summary).map(r => r.maxGapMin));
+  const sorted = [...vs].sort((a, b) => b.score - a.score);
+  const best = sorted[0], second = sorted[1];
+  const bMin = minOf(best), bGap = gapOf(best);
+
+  // сопоставимость: одна сетка расчёта и один сценарий
+  const grid = v => `${v.scenario.environment.horizon_s}/${v.scenario.environment.step_s}`;
+  const mixedGrid = new Set(vs.map(grid)).size > 1;
+  const mixedScenario = new Set(vs.map(v => v.scenarioTitle)).size > 1;
+  const warn = mixedGrid || mixedScenario
+    ? `<div class="cmp-warn"><b>Варианты посчитаны не на одной базе.</b> ${[mixedGrid ? 'различаются горизонт или шаг расчёта' : '', mixedScenario ? 'различаются исходные сценарии' : ''].filter(Boolean).join('; ')}. Дельты в таблице ниже сравнивают разные условия — для проектного решения пересчитайте варианты на одной сетке.</div>`
+    : '';
+
+  // на чём именно выигрывает и чем платит
+  const pros = [], cons = [];
+  if (second) {
+    const sMin = minOf(second), sGap = gapOf(second);
+    if (bMin - sMin > 1e-9) pros.push(`худший пункт выше на ${((bMin - sMin) * 100).toFixed(1)} п.п. (${pct(bMin)} против ${pct(sMin)})`);
+    else if (sMin - bMin > 1e-9) cons.push(`худший пункт ниже на ${((sMin - bMin) * 100).toFixed(1)} п.п.`);
+    if (sGap - bGap > 0.5) pros.push(`максимальный перерыв короче на ${(sGap - bGap).toFixed(0)} мин`);
+    else if (bGap - sGap > 0.5) cons.push(`максимальный перерыв длиннее на ${(bGap - sGap).toFixed(0)} мин`);
+    const lat = c => (v => v.summary[c]?.avgLatencyMs ?? 0);
+    const bLat = clients.reduce((a, c) => a + lat(c)(best), 0) / clients.length;
+    const sLat = clients.reduce((a, c) => a + lat(c)(second), 0) / clients.length;
+    if (bLat - sLat > 0.5) cons.push(`задержка выше на ${(bLat - sLat).toFixed(1)} мс`);
+    const bHo = clients.reduce((a, c) => a + (best.summary[c]?.handovers ?? 0), 0);
+    const sHo = clients.reduce((a, c) => a + (second.summary[c]?.handovers ?? 0), 0);
+    if (bHo - sHo > 0) cons.push(`переключений маршрута больше на ${bHo - sHo} за сутки`);
+  }
+
+  // какие пункты не добирают до цели и сколько им нужно
+  const short = clients.map(c => ({ c, r: best.summary[c] })).filter(x => x.r && x.r.availability < target)
+    .sort((a, b) => a.r.availability - b.r.availability);
+
+  return `${warn}<div class="cmp-verdict">
+    <div class="cmp-pick"><span class="l">Рекомендуемый вариант</span><b>${best.name}</b></div>
+    <p>Худший пункт <b class="${bMin >= target ? 'good' : 'bad'}">${pct(bMin)}</b>, максимальный перерыв <b>${bGap.toFixed(0)} мин</b>.
+    ${bMin >= target
+      ? `Цель ${pct(target)} достигнута для всех ${clients.length} пунктов — вариант можно защищать как проектное решение.`
+      : `Цель ${pct(target)} <b>не достигнута</b>: ${short.map(x => `${x.c} ${pct(x.r.availability)} (не хватает ${((target - x.r.availability) * 100).toFixed(1)} п.п.)`).join(', ')}.`}</p>
+    ${second ? `<p><b>Почему он, а не «${second.name}»:</b> ${pros.length ? pros.join(', ') : 'по доступности и перерывам варианты равны, решает суммарная оценка'}.${cons.length ? ` Плата: ${cons.join(', ')}.` : ''}</p>` : ''}
+    <p class="cmp-how">Порядок сравнения: сначала худший пункт, затем перерывы, затем длина маршрутов — ровно так, как считается оценка варианта. Сравниваются ${vs.length} варианта на сетке ${best.scenario.environment.horizon_s / 3600} ч / ${best.scenario.environment.step_s} с.</p>
+  </div>`;
+}
+
 export function openCompare() {
   let vs = state.variants.filter(v => v.selected);
   if (vs.length < 2) vs = state.variants;
@@ -263,7 +313,8 @@ export function openCompare() {
     return vals.map((x, i) => `<td class="${i > 0 && JSON.stringify(x) !== JSON.stringify(vals[0]) ? 'diff' : ''}">${fmt(x)}</td>`).join('');
   };
 
-  let html = `<div style="overflow:auto"><table class="cmp"><thead><tr><th></th>${vs.map(v => `<th class="v">${v.name}<br><small style="color:var(--muted);font:11px var(--font-body)">${v.scenarioTitle}</small></th>`).join('')}</tr></thead><tbody>`;
+  let html = verdictHtml(vs, target, clients);
+  html += `<div style="overflow:auto"><table class="cmp"><thead><tr><th></th>${vs.map(v => `<th class="v">${v.name}<br><small style="color:var(--muted);font:11px var(--font-body)">${v.scenarioTitle}</small></th>`).join('')}</tr></thead><tbody>`;
   html += `<tr class="sect"><td colspan="${vs.length + 1}">Параметры</td></tr>`;
   html += `<tr><td>Группировка</td>${param(vs.map(v => [v.scenario.design.satellites.length, v.scenario.design.planes.length, maxBatch(v.scenario)]), x => `${x[0]} КА / ${x[1]} пл. / ${x[2]} оч.`)}</tr>`;
   html += `<tr><td>Наклонения плоскостей</td>${param(vs.map(v => v.scenario.design.planes.map(p => p.inclination_deg ?? v.scenario.environment.inclination_deg)), x => [...new Set(x)].map(a => `${a}°`).join(', '))}</tr>`;
@@ -294,11 +345,6 @@ export function openCompare() {
   }
   html += `</tbody></table></div>`;
 
-  // рекомендация
-  const best = [...vs].sort((a, b) => b.score - a.score)[0];
-  const bestMin = Math.min(...Object.values(best.summary).map(r => r.availability));
-  const bestGap = Math.max(...Object.values(best.summary).map(r => r.maxGapMin));
-  html += `<div class="cmp-note"><b>Рекомендация:</b> лучший из сравниваемых — «${best.name}»: худший пункт ${pct(bestMin)}, максимальный перерыв ${bestGap.toFixed(0)} мин${bestMin >= target ? ', цель ' + pct(target) + ' достигнута для всех пунктов' : ', цель ' + pct(target) + ' <b>не достигнута</b>'}. Оценка учитывает сначала худший пункт, затем перерывы и длину маршрутов.</div>`;
   body.innerHTML = html;
   body.querySelectorAll('canvas.strip').forEach(cv => {
     const v = vs.find(x => x.id === cv.dataset.v);
