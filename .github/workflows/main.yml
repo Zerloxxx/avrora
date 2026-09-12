@@ -1,21 +1,15 @@
- name: Deploy to GitHub Pages
-
-  on:
-    push:
-      branches: [main]
-    workflow_dispatch:
-
-  permissions:
+name: Deploy to GitHub Pages 
+on: push
+permissions:
     contents: read
     pages: write
     id-token: write
-
-  jobs:
+jobs:
     deploy:
+      runs-on: ubuntu-latest
       environment:
         name: github-pages
         url: ${{ steps.deployment.outputs.page_url }}
-      runs-on: ubuntu-latest
 
       steps:
         - uses: actions/checkout@v4
@@ -24,7 +18,7 @@
 
         - uses: actions/upload-pages-artifact@v3
           with:
-            path: "./web"
+            path: ./web
 
         - id: deployment
           uses: actions/deploy-pages@v4
