@@ -232,6 +232,12 @@ export function renderStrategies(res, out) {
 export function renderBackup(res, out) {
   const { clientId, steps, withRoute, disjointShare, spofShare, oneAccessShare, chainCriticalShare, critical, step_s } = res;
   const top = critical.slice(0, 8);
+  // без маршрута все доли равны нулю, и «0% незаменимых» читалось бы как хорошая новость
+  if (!withRoute) {
+    out.innerHTML = `<div class="an-note an-stale">У пункта <b>${clientId}</b> за сутки нет ни одного шага со сквозным маршрутом до шлюза,
+      поэтому резервировать нечего. Сначала нужно добиться связи: добавить аппаратов, сменить этап развёртывания или поставить второй шлюз.</div>`;
+    return;
+  }
   out.innerHTML = `<div class="kpis">
       ${kpi(pct(disjointShare), 'времени со связью есть полностью независимый обходной путь', disjointShare > 0.5 ? 'good' : disjointShare > 0.2 ? 'warn' : 'bad')}
       ${kpi(pct(spofShare), 'времени в маршруте есть незаменимый аппарат', spofShare < 0.3 ? 'good' : 'bad')}
@@ -279,7 +285,7 @@ export function buildReport() {
     const ch = st.rows.find(r => r.key === st.chosen), mh = st.rows.find(r => r.key === 'minhop'), lt = st.rows.find(r => r.key === 'latency');
     recs.push(`Стратегия маршрутизации обоснована расчётом: доступность у липкого BFS, поиска заново и минимума задержки ${st.sameAvailability ? 'совпадает' : 'различается'} (${pct(ch.minAvailability)} для худшего пункта) — существование пути определяется геометрией сети, а не алгоритмом. Выбран липкий BFS: ${mh.handovers - ch.handovers} переключений маршрута в сутки меньше, чем при поиске заново (${ch.handovers} против ${mh.handovers}), ценой ${(ch.avgLatencyMs - lt.avgLatencyMs).toFixed(1)} мс средней задержки против стратегии минимума задержки.`);
   } }
-  { const bp = an('backup'); if (bp) recs.push(`Резервные пути для ${bp.clientId}: полностью независимый обходной путь есть только ${pct(bp.disjointShare)} времени со связью, в ${pct(bp.spofShare)} в маршруте есть незаменимый аппарат. Основная причина — над пунктом виден ровно один аппарат (${pct(bp.oneAccessShare)} времени), узкое звено в середине цепочки только ${pct(bp.chainCriticalShare)}: резерв даёт увеличение числа аппаратов над пунктом, а не дальности ISL.${bp.critical[0] ? ` Дольше всех незаменим ${bp.critical[0].id} — ${bp.critical[0].minutes.toFixed(0)} мин.` : ''}`); }
+  { const bp = an('backup'); if (bp && !bp.withRoute) recs.push(`Резервные пути для ${bp.clientId}: за сутки нет ни одного шага со сквозным маршрутом — резервировать нечего, сначала нужна связь.`); else if (bp) recs.push(`Резервные пути для ${bp.clientId}: полностью независимый обходной путь есть только ${pct(bp.disjointShare)} времени со связью, в ${pct(bp.spofShare)} в маршруте есть незаменимый аппарат. Основная причина — над пунктом виден ровно один аппарат (${pct(bp.oneAccessShare)} времени), узкое звено в середине цепочки только ${pct(bp.chainCriticalShare)}: резерв даёт увеличение числа аппаратов над пунктом, а не дальности ISL.${bp.critical[0] ? ` Дольше всех незаменим ${bp.critical[0].id} — ${bp.critical[0].minutes.toFixed(0)} мин.` : ''}`); }
 
   const vs = state.variants;
   const variantsTable = vs.length ? `<h2>Сравнение сохранённых вариантов</h2><table><thead><tr><th>Вариант</th><th>Сценарий</th><th>Изменения</th>${clients.map(c => `<th>${c}</th>`).join('')}<th>Макс. перерыв</th></tr></thead><tbody>${vs.map(v => `<tr><td><b>${esc(v.name)}</b></td><td>${esc(v.scenarioTitle)}</td><td>${esc(v.changes.join('; ') || '—')}</td>${clients.map(c => { const r = v.summary[c]; return r ? `<td class="${r.availability >= target ? 'good' : 'bad'}">${pct(r.availability)}</td>` : '<td>—</td>'; }).join('')}<td>${Math.max(...Object.values(v.summary).map(r => r.maxGapMin)).toFixed(0)} мин</td></tr>`).join('')}</tbody></table>` : '';
