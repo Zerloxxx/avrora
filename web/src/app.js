@@ -2,7 +2,7 @@
 import { state, $, $$, toast, fmtTime, parseTime, on } from './state.js';
 import { TERRAIN_PRESETS } from './sim.js';
 import { loadScenario, markChanged, resetScenario, setStage, setEclipseIslOff, addOutage, addSite, saveVariant, restoreVariants, importFile, exportScenario, exportResults, exportVariants, encodeConfig, applyConfigFromHash, generateWalker, demFor } from './model.js';
-import { overlay, zoomBy, zoomTo, applyCamera, pickLatLon, getLastProj, startLoop, camera, dyn, root, inertial } from './scene.js';
+import { overlay, zoomBy, zoomTo, applyCamera, pickLatLon, getLastProj, startLoop, advanceTime, camera, dyn, root, inertial } from './scene.js';
 import { renderStatus, openCompare } from './panels.js';
 import { startBroadcaster } from './sync.js';
 import { renderDesign, renderLayouts, runAnalysis, renderCoverage, renderDeployment, renderBatches, renderPairs, renderSpares, renderMonteCarlo,
@@ -76,7 +76,10 @@ $('#nav-abonent').onclick = ev => { ev.preventDefault(); window.open(abonentUrl(
 /* Ведём вид абонента: время, скорость, пауза и конфигурация уходят в BroadcastChannel.
    Работает между окнами одного браузера; на отдельном телефоне синхронизации нет — там живой UTC. */
 const sync = startBroadcaster({
-  getState: () => ({ t: state.t, playing: state.playing, speed: state.speed }),
+  // advanceTime() перед чтением: такт обязан нести время «на сейчас». Иначе в фоне,
+  // где кадров нет, в канал ушёл бы момент, замороженный на прошлом кадре, и ведомый вид
+  // откатывался бы к нему назад каждый такт
+  getState: () => { advanceTime(); return { t: state.t, playing: state.playing, speed: state.speed }; },
   getConfig: () => (state.scenario ? encodeConfig() : null),
   onFollowers: n => {
     const nav = $('#nav-abonent');
