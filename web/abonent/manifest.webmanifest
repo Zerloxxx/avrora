@@ -1,0 +1,17 @@
+{
+  "name": "Аврора — связь в вашем пункте",
+  "short_name": "Аврора",
+  "description": "Когда будет связь, сколько продлится и через какой спутник — для наземного пункта северной группировки.",
+  "lang": "ru",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#05070f",
+  "theme_color": "#05070f",
+  "icons": [
+    { "src": "icon-180.png", "sizes": "180x180", "type": "image/png" },
+    { "src": "icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" },
+    { "src": "icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+  ]
+}

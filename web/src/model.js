@@ -2,6 +2,7 @@
    Только мутации state и события шины — никакого DOM, кроме уведомлений. */
 import { state, clone, toast, fmtTime, stamp, emit } from './state.js';
 import { computeAvailability, summarize, score, validate, snapshot, findRoute, timeGrid, REASONS, walkerDelta, maxBatch, TERRAIN_PRESETS, maskFromProfiles, uniformMask, MASK_SECTORS, R } from './sim.js';
+import { encodeDiff, decodeDiff, applyDiff, readHash } from './configlink.js';
 
 const START_T = 43200;   // полдень UTC
 
@@ -326,44 +327,22 @@ export function exportVariants() {
   download(`variants_${stamp()}.json`, state.variants.map(({ timelines, ...v }) => v));
 }
 
-// ---------- ссылка на конфигурацию (#c=base64 диффа относительно встроенного сценария) ----------
+// ---------- ссылка на конфигурацию ----------
+// Формат диффа — в configlink.js (его же читает вид абонента), чтобы страницы не разошлись.
 export function encodeConfig() {
-  const s = state.scenario, b = state.base;
-  const diff = { id: state.scenarioId, st: s.design.launch_stage, pl: s.design.planes.map(p => [p.id, p.raan_deg, p.phase_deg]), f: s.failures, go: s.gateway_outages,
-    gs: s.ground_sites.filter(g => !b.ground_sites.some(x => x.id === g.id)), rm: b.ground_sites.filter(g => !s.ground_sites.some(x => x.id === g.id)).map(g => g.id),
-    sat: s.design.satellites.filter(x => !b.design.satellites.some(y => y.id === x.id)), lb: s.design.satellites.map(x => x.launch_batch), ecl: !!s.environment.eclipse_isl_off, c: state.clientId };
-  const sameShape = s.design.planes.length === b.design.planes.length && s.design.planes.every(p => b.design.planes.some(x => x.id === p.id));
-  if (!sameShape) { diff.dz = s.design; delete diff.sat; delete diff.lb; }
-  diff.pl = s.design.planes.map(p => [p.id, p.raan_deg, p.phase_deg, p.inclination_deg]);
-  const hm = {};
-  for (const g of s.ground_sites) if (g.horizon_mask && b.ground_sites.some(x => x.id === g.id)) hm[g.id] = { m: g.horizon_mask, t: g.terrain };
-  if (Object.keys(hm).length) diff.hm = hm;
-  return btoa(unescape(encodeURIComponent(JSON.stringify(diff))));
+  return encodeDiff(state.scenario, state.base, { scenarioId: state.scenarioId, clientId: state.clientId });
 }
 export function applyConfigFromHash() {
-  const m = location.hash.match(/#c=([A-Za-z0-9+/=]+)/);
-  if (!m) return false;
-  try {
-    const d = JSON.parse(decodeURIComponent(escape(atob(m[1]))));
-    const src = window.SCENARIOS?.[d.id];
-    if (!src) return false;
-    loadScenario(src, d.id);
-    const s = state.scenario;
-    if (d.dz) s.design = d.dz;
-    s.design.launch_stage = d.st;
-    for (const [id, r, p, inc] of d.pl) { const pl = s.design.planes.find(x => x.id === id); if (pl) { pl.raan_deg = r; pl.phase_deg = p; if (Number.isFinite(inc)) pl.inclination_deg = inc; } }
-    for (const [id, v] of Object.entries(d.hm || {})) { const g = s.ground_sites.find(x => x.id === id); if (g) { g.horizon_mask = v.m; g.terrain = v.t; } }
-    s.failures = d.f || []; s.gateway_outages = d.go || [];
-    s.ground_sites = s.ground_sites.filter(g => !(d.rm || []).includes(g.id)).concat(d.gs || []);
-    for (const x of d.sat || []) s.design.satellites.push(x);
-    if (d.lb && d.lb.length === s.design.satellites.length) s.design.satellites.forEach((x, i) => x.launch_batch = d.lb[i]);
-    if (d.ecl) s.environment.eclipse_isl_off = true;
-    if (d.c) state.clientId = d.c;
-    markChanged({ rebuildScene: true });
-    document.body.classList.add('workspace');
-    toast('Конфигурация загружена из ссылки', 'ok', 3000);
-    return true;
-  } catch { return false; }
+  const b64 = readHash(location.hash);
+  if (!b64) return false;
+  const d = decodeDiff(b64);
+  const src = d && window.SCENARIOS?.[d.id];
+  if (!src) return false;
+  loadScenario(src, d.id);
+  applyDiff(state.scenario, d);
+  if (d.c) state.clientId = d.c;
+  markChanged({ rebuildScene: true });
+  document.body.classList.add('workspace');
+  toast('Конфигурация загружена из ссылки', 'ok', 3000);
+  return true;
 }
-
-

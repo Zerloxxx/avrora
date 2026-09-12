@@ -4,11 +4,13 @@
 
 | Команда (из корня репозитория) | Что делает |
 |---|---|
-| `python -m http.server 8765 --directory web` | Локальный сервер → http://localhost:8765 (или `web/start.bat`, `web/start.sh`) |
-| `python web/tools/horizon-mask.py` | Маски горизонта по рельефу для пунктов кейса и городов → `web/data/terrain.js` (нужен интернет) |
+| `cd web && python3 tools/serve.py` | **Основной способ**: сервер без кеширования → http://localhost:8765 (инженерный вид) и /abonent/ (вид абонента). Без `no-store` браузер держит старые ES-модули |
+| `python3 -m http.server 8765 --directory web` | Простой вариант (или `web/start.bat`, `web/start.sh`) — но кеширует модули при разработке |
+| `python3 web/tools/horizon-mask.py` | Маски горизонта по рельефу для пунктов кейса и городов → `web/data/terrain.js` (нужен интернет) |
 | `cd web && node --test` | Тесты расчётного ядра (эталон `geometry.py`, свойства модели, валидация, инструменты анализа) |
-| `python web/tools/bundle-scenarios.py` | Пересобрать `web/data/scenarios.js` из папки «Данные» — после любого изменения сценариев |
-| `python "Расчетный модуль/geometry.py" Данные/01_full_constellation.json 0` | Эталонный снимок сети от организаторов (сверить с `snapshot(s, 0)`) |
+| `python3 web/tools/bundle-scenarios.py` | Пересобрать `web/data/scenarios.js` из папки «Данные» — после любого изменения сценариев |
+| `python3 "Расчетный модуль/geometry.py" Данные/01_full_constellation.json 0` | Эталонный снимок сети от организаторов (сверить с `snapshot(s, 0)`) |
+| `cd web && node tools/parity.mjs` | Полная сверка ядра с эталоном: 4 сценария × 5 моментов, позиции/active/ISL/видимость (нужны python3 и numpy) |
 | `Compress-Archive web Аврора_web.zip` (PowerShell) | Архив для передачи без git |
 
 ## Скиллы агента

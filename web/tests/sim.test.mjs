@@ -5,7 +5,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { snapshot, findRoute, computeAvailability, validate, routeLengthKm, optimizePlanes, coverageGrid, pairFailures, timeGrid, C_LIGHT } from '../src/sim.js';
+import { snapshot, findRoute, computeAvailability, validate, routeLengthKm, optimizePlanes, coverageGrid, pairFailures, timeGrid, C_LIGHT, contactWindows, skyView, uniformMask, siteMask, maskSector, planeInclination } from '../src/sim.js';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const window = {};
@@ -132,4 +132,124 @@ test('снимок на 12:00 совпадает с geometry.py по соста�
   for (const g of full.ground_sites) for (const k of snap.ground[g.id].visible) mine.add(g.id + '|' + ids[k]);
   const theirs = new Set(ref.edges.map(e => e[0] + '|' + e[1]));
   assert.deepEqual([...mine].sort(), [...theirs].sort());
+});
+
+test('окна связи: покрывают горизонт без дыр и совпадают с computeAvailability', () => {
+  for (const name of ['01_full_constellation', '02_first_launch', '03_satellite_outages']) {
+    const s = clone(S[name]);
+    const client = s.ground_sites.find(g => g.role === 'client').id;
+    const w = contactWindows(s, client);
+    const av = computeAvailability(s)[client];
+
+    // доступность считается тем же маршрутом — значения должны быть идентичны
+    assert.equal(w.availability.toFixed(9), av.availability.toFixed(9), `${name}: доступность разошлась`);
+
+    // окна и перерывы вместе укладывают горизонт встык, без пропусков и наложений
+    const all = [...w.windows, ...w.gaps].sort((a, b) => a.start_s - b.start_s);
+    assert.equal(all[0].start_s, 0, `${name}: первый отрезок должен начинаться в 0`);
+    assert.equal(all[all.length - 1].end_s, w.steps * w.step_s, `${name}: последний отрезок должен доходить до конца сетки`);
+    for (let i = 1; i < all.length; i++) assert.equal(all[i].start_s, all[i - 1].end_s, `${name}: разрыв между отрезками`);
+
+    // суммарная длительность окон = доля доступности × горизонт
+    const okMin = w.windows.reduce((a, x) => a + x.durMin, 0);
+    assert.equal((okMin * 60 / (w.steps * w.step_s)).toFixed(9), w.availability.toFixed(9), `${name}: сумма окон не бьётся с долей`);
+
+    // максимальный перерыв — тот же, что в сводке
+    assert.equal((w.worstGap?.durMin ?? 0).toFixed(6), av.maxGapMin.toFixed(6), `${name}: максимальный перерыв разошёлся`);
+
+    // у каждого перерыва названа причина из разрешённого списка
+    for (const g of w.gaps) assert.ok(['no_sat', 'net_split', 'no_gw_contact', 'gw_offline'].includes(g.reason), `${name}: причина «${g.reason}»`);
+  }
+});
+
+test('небо над пунктом: видны ровно те аппараты, что в снимке, и все выше порога', () => {
+  const s = clone(full);
+  const client = s.ground_sites.find(g => g.role === 'client').id;
+  const minEl = s.environment.min_elevation_deg;
+  for (const t of [0, 21600, 43200, 64800]) {
+    const sky = skyView(s, client, t);
+    const snap = snapshot(s, t);
+    assert.equal(sky.length, snap.ground[client].visibleRaw.length + (snap.ground[client].blocked?.length ?? 0),
+      `t=${t}: состав неба разошёлся со snapshot() (видимые + закрытые рельефом)`);
+    for (const x of sky) {
+      assert.ok(x.elDeg >= minEl - 1e-9, `t=${t}: ${x.id} возвышение ${x.elDeg.toFixed(2)}° ниже порога ${minEl}°`);
+      assert.ok(x.azDeg >= 0 && x.azDeg < 360, `t=${t}: ${x.id} азимут вне [0,360)`);
+      // дальность согласована с углом возвышения: чем выше, тем ближе (для круговой орбиты)
+      assert.ok(x.rangeKm > s.environment.altitude_km - 1 && x.rangeKm < 3000, `t=${t}: ${x.id} дальность ${x.rangeKm.toFixed(0)} км`);
+    }
+    // отсортировано по убыванию возвышения — первый и есть «над головой»
+    for (let i = 1; i < sky.length; i++) assert.ok(sky[i - 1].elDeg >= sky[i].elDeg, `t=${t}: порядок сортировки`);
+  }
+});
+
+test('небо: аппарат в зените даёт возвышение ~90° и дальность ~высоте орбиты', () => {
+  const s = clone(full);
+  const client = s.ground_sites.find(g => g.role === 'client').id;
+  // ищем момент, когда над пунктом самый высокий аппарат — проверяем физику на экстремуме
+  let best = { elDeg: -90 };
+  for (let t = 0; t < s.environment.horizon_s; t += s.environment.step_s) {
+    const top = skyView(s, client, t)[0];
+    if (top && top.elDeg > best.elDeg) best = top;
+  }
+  assert.ok(best.elDeg > 70, `лучший пролёт всего ${best.elDeg.toFixed(1)}° — ожидалось выше 70°`);
+  // при возвышении el дальность до круговой орбиты не меньше высоты и растёт при снижении el
+  assert.ok(best.rangeKm < s.environment.altitude_km * 1.15,
+    `в зените дальность ${best.rangeKm.toFixed(0)} км должна быть близка к высоте ${s.environment.altitude_km} км`);
+});
+
+test('рельеф: маска горизонта закрывает аппараты, роняет доступность и видна абоненту', () => {
+  const base = clone(full);
+  const client = base.ground_sites.find(g => g.role === 'client').id;
+  const avail0 = computeAvailability(base)[client].availability;
+
+  // тот же сценарий, но у пункта горы: закрытие 30° по всем азимутам
+  const masked = clone(full);
+  const site = masked.ground_sites.find(g => g.id === client);
+  site.horizon_mask = uniformMask(30);
+  site.terrain = 'valley';
+
+  // 1. маска читается и применяется к нужному сектору
+  assert.equal(siteMask(site).length, 36, 'маска должна быть на 36 секторов');
+  assert.equal(maskSector(siteMask(site), 123.4), 30, 'угол закрытия в секторе азимута');
+
+  // 2. закрытое небо не может дать доступность выше открытого
+  const avail1 = computeAvailability(masked)[client].availability;
+  assert.ok(avail1 <= avail0 + 1e-9, `с маской ${(avail1*100).toFixed(1)}% > без маски ${(avail0*100).toFixed(1)}%`);
+  assert.ok(avail1 < avail0, 'закрытие 30° обязано снизить доступность полной группировки');
+
+  // 3. окна связи для абонента считаются на той же физике
+  const w = contactWindows(masked, client);
+  assert.equal(w.availability.toFixed(9), avail1.toFixed(9), 'окна связи разошлись с computeAvailability при маске');
+
+  // 4. небо разделяет «видно» и «закрыто рельефом», причём закрытые ниже своей маски
+  let blockedSeen = 0;
+  for (const t of [0, 21600, 43200, 64800]) {
+    const snap = snapshot(masked, t);
+    for (const x of skyView(masked, client, t)) {
+      assert.equal(x.maskDeg, 30, 'maskDeg должен отдавать угол закрытия сектора');
+      if (x.blocked) {
+        blockedSeen++;
+        assert.ok(x.elDeg < x.maskDeg + 1e-9, `${x.id}: закрыт, но возвышение ${x.elDeg.toFixed(1)}° ≥ маски`);
+        assert.ok(snap.ground[client].blocked.includes(x.index), 'закрытый аппарат должен быть в snapshot().blocked');
+      } else {
+        assert.ok(x.elDeg >= x.maskDeg - 1e-9, `${x.id}: виден, но возвышение ${x.elDeg.toFixed(1)}° < маски`);
+      }
+    }
+  }
+  assert.ok(blockedSeen > 0, 'при закрытии 30° хотя бы один аппарат обязан оказаться за рельефом');
+});
+
+test('наклонение на плоскость: своё значение меняет геометрию, отсутствие — берёт общее', () => {
+  const s = clone(full);
+  assert.equal(planeInclination(s, s.design.planes[0]), s.environment.inclination_deg, 'без поля — общее наклонение');
+  const tilted = clone(full);
+  tilted.design.planes[0].inclination_deg = 60;
+  assert.equal(planeInclination(tilted, tilted.design.planes[0]), 60, 'своё наклонение плоскости');
+  // аппараты первой плоскости обязаны сместиться, остальных — остаться на месте
+  const a = snapshot(s, 1000).pos, b = snapshot(tilted, 1000).pos;
+  const p0 = tilted.design.satellites.findIndex(x => x.plane_id === tilted.design.planes[0].id);
+  const p1 = tilted.design.satellites.findIndex(x => x.plane_id === tilted.design.planes[1].id);
+  assert.ok(Math.hypot(a[p0].x-b[p0].x, a[p0].y-b[p0].y, a[p0].z-b[p0].z) > 100, 'плоскость с новым наклонением должна сдвинуться');
+  assert.ok(Math.hypot(a[p1].x-b[p1].x, a[p1].y-b[p1].y, a[p1].z-b[p1].z) < 1e-6, 'остальные плоскости трогать нельзя');
+  assert.deepEqual(validate(tilted), [], 'наклонение плоскости — допустимое расширение схемы');
 });

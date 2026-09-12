@@ -1,0 +1,91 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<title>Аврора · связь в вашем пункте</title>
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="description" content="Когда будет связь, сколько она продлится и через какой спутник — для наземного пункта северной спутниковой группировки.">
+<meta name="theme-color" content="#05070f">
+
+<!-- iOS: «Добавить на экран «Домой»» открывает страницу без адресной строки -->
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Аврора">
+<link rel="apple-touch-icon" href="icon-180.png">
+<link rel="icon" type="image/png" href="icon-180.png">
+<link rel="manifest" href="manifest.webmanifest">
+
+<link rel="stylesheet" href="style.css">
+<!-- как на основном сайте: three резолвится по имени -->
+<script type="importmap">
+{ "imports": { "three": "../vendor/three.module.js" } }
+</script>
+</head>
+<body>
+
+<canvas id="globe"></canvas>
+<canvas id="glabels"></canvas>
+
+<main class="app">
+
+  <header class="top">
+    <div class="brand"><i></i>АВРОРА</div>
+    <a class="link" id="to-site" href="../index.html">Инженерный вид →</a>
+  </header>
+
+  <section class="status bad" id="status">
+    <div class="big" id="status-big">Считаю…</div>
+    <div class="sub" id="status-sub"></div>
+  </section>
+
+  <section class="clock">
+    <div class="now"><b id="clock-time">--:--</b><span id="clock-mode"></span></div>
+    <input type="range" id="scrub" min="0" max="86280" step="120" aria-label="Момент суток">
+    <button class="btn" id="btn-live" hidden>Сейчас</button>
+  </section>
+
+  <section class="card">
+    <h2>Ближайшие окна связи</h2>
+    <div id="windows-list"></div>
+  </section>
+
+  <section class="card">
+    <h2>Как связь идёт сейчас</h2>
+    <div id="route-info"></div>
+  </section>
+
+  <section class="card">
+    <h2>Сутки целиком</h2>
+    <canvas id="strip" class="strip"></canvas>
+    <div class="legend"><span><i class="g"></i>связь</span><span><i class="r"></i>перерыв</span><span>00:00 — 24:00</span></div>
+    <div class="stats" id="day-stats"></div>
+  </section>
+
+  <section class="card">
+    <h2>Спутники над вами</h2>
+    <div id="sky-list"></div>
+    <p class="note" id="terrain-note"></p>
+    <p class="note">Аппарат считается видимым, когда поднялся выше порогового угла над горизонтом и не закрыт рельефом. Направление — сторона света, куда смотреть.</p>
+  </section>
+
+  <section class="card">
+    <h2>Ваш пункт</h2>
+    <div class="seg" id="client-seg"></div>
+    <button class="btn wide" id="btn-geo">⌖ Моё местоположение</button>
+    <p class="note">Выбор из пунктов сценария даёт те же числа, что инженерный вид. «Моё местоположение» добавляет вашу точку как новый клиентский пункт и считает для неё.</p>
+  </section>
+
+  <footer id="foot" class="foot"></footer>
+</main>
+
+<div class="toast" id="toast" hidden></div>
+
+<script src="../data/scenarios.js"></script>
+<script type="module" src="../src/subscriber.js"></script>
+<script>
+  // офлайн: страница и её ресурсы кладутся в кеш при первом открытии
+  if ('serviceWorker' in navigator) addEventListener('load', () => navigator.serviceWorker.register('sw.js').catch(() => {}));
+</script>
+</body>
+</html>

@@ -1,9 +1,10 @@
 /* Точка входа: привязка DOM-событий к модели/сцене/аналитике и старт. */
-import { state, $, $$, toast, fmtTime, parseTime } from './state.js';
+import { state, $, $$, toast, fmtTime, parseTime, on } from './state.js';
 import { TERRAIN_PRESETS } from './sim.js';
 import { loadScenario, markChanged, resetScenario, setStage, setEclipseIslOff, addOutage, addSite, saveVariant, restoreVariants, importFile, exportScenario, exportResults, exportVariants, encodeConfig, applyConfigFromHash, generateWalker, demFor } from './model.js';
 import { overlay, zoomBy, zoomTo, applyCamera, pickLatLon, getLastProj, startLoop, camera, dyn, root, inertial } from './scene.js';
 import { renderStatus, openCompare } from './panels.js';
+import { startBroadcaster } from './sync.js';
 import { renderDesign, runAnalysis, renderCoverage, renderDeployment, renderBatches, renderPairs, renderSpares, renderMonteCarlo,
   renderQuality, buildReport, runOptimize, runVulnerable, toggleCoverageOverlay } from './analysis.js';
 
@@ -58,11 +59,30 @@ $('#an-run-mc').onclick = () => runAnalysis('montecarlo', { pFail: (+$('#an-mc-p
 $('#an-eclipse').onchange = ev => setEclipseIslOff(ev.target.checked);
 $('#an-run-report').onclick = buildReport;
 $('#export-report').onclick = buildReport;
-$('#export-link').onclick = async () => {
-  const url = location.origin + location.pathname + '#c=' + encodeConfig();
-  try { await navigator.clipboard.writeText(url); toast('Ссылка на конфигурацию скопирована', 'ok', 2500); }
+// Ссылка на вид абонента несёт ту же конфигурацию (#c=), поэтому числа на телефоне совпадают с этим экраном.
+const abonentUrl = () => new URL('abonent/', location.href).href + '#c=' + encodeConfig();
+const copyLink = async (url, what) => {
+  try { await navigator.clipboard.writeText(url); toast(`${what} скопирована`, 'ok', 2500); }
   catch { prompt('Скопируйте ссылку:', url); }
 };
+$('#export-link').onclick = () => copyLink(location.origin + location.pathname + '#c=' + encodeConfig(), 'Ссылка на конфигурацию');
+$('#export-abonent-link').onclick = () => copyLink(abonentUrl(), 'Ссылка для абонента');
+$('#nav-abonent').onclick = ev => { ev.preventDefault(); window.open(abonentUrl(), '_blank'); };
+
+/* Ведём вид абонента: время, скорость, пауза и конфигурация уходят в BroadcastChannel.
+   Работает между окнами одного браузера; на отдельном телефоне синхронизации нет — там живой UTC. */
+const sync = startBroadcaster({
+  getState: () => ({ t: state.t, playing: state.playing, speed: state.speed }),
+  getConfig: () => (state.scenario ? encodeConfig() : null),
+  onFollowers: n => {
+    const nav = $('#nav-abonent');
+    nav.classList.toggle('live', n > 0);
+    nav.title = n > 0 ? `Вид абонента открыт (${n}) и следует за этим экраном` : 'Открыть вид абонента';
+  },
+});
+// конфигурацию шлём по факту изменения, а не по таймеру
+on('controls', () => sync.configChanged());
+on('scenario', () => sync.configChanged());
 $('#btn-now').onclick = () => {
   const d = new Date();
   state.t = (d.getUTCHours() * 3600 + d.getUTCMinutes() * 60 + d.getUTCSeconds()) % state.scenario.environment.horizon_s;
@@ -180,16 +200,20 @@ overlay.addEventListener('pointerdown', ev => {
       return;
     }
   }
+  // мышью нативный старт выделения делает курсор текстовым и выделяет страницу; на touch этим занимается touch-action
+  if (ev.pointerType !== 'touch') ev.preventDefault();
   // на телефоне тап по сцене закрывает выдвинутую панель
   document.body.classList.remove('show-left', 'show-right');
   state.view.drag = { x: ev.clientX, y: ev.clientY, yaw: state.view.yaw, pitch: state.view.pitch, moved: false };
+  document.body.classList.add('dragging');
 });
-const endTouch = ev => { touches.delete(ev.pointerId); if (touches.size < 2) pinch = null; };
+const endTouch = ev => { touches.delete(ev.pointerId); if (touches.size < 2) pinch = null; document.body.classList.remove('dragging'); };
 window.addEventListener('pointercancel', endTouch);
 window.addEventListener('pointerup', ev => {
   endTouch(ev);
   const dr = state.view.drag;
   state.view.drag = null;
+  document.body.classList.remove('dragging');
   if (dr && !dr.moved && state.placing && ev.target === overlay) {
     const ll = pickLatLon(ev.clientX, ev.clientY);
     if (!ll) { toast('Кликните по поверхности Земли', 'error'); return; }

@@ -37,9 +37,14 @@ html, body {
   width: 100%;
   height: 100%;
   display: block;
+  user-select: none;
+  -webkit-user-select: none;
 }
 #overlay { z-index: 1; cursor: grab; touch-action: none; }
 #overlay:active { cursor: grabbing; }
+/* пока крутим Землю — курсор «схвачено» и никакого выделения текста по всей странице */
+body.dragging, body.dragging * { user-select: none !important; -webkit-user-select: none !important; }
+body.dragging, body.dragging #overlay { cursor: grabbing; }
 
 /* ---------- top bar ---------- */
 .top {
@@ -76,6 +81,13 @@ html, body {
   transition: color .2s, background .2s;
 }
 .nav a:hover, .nav a.active { color: var(--text); background: rgba(255,255,255,.06); }
+/* «Вид абонента» светится, пока открытая страница абонента следует за этим экраном */
+.nav a.live { color: var(--text); }
+.nav a.live::after {
+  content: ""; display: inline-block; margin-left: 7px;
+  width: 6px; height: 6px; border-radius: 50%; vertical-align: 1px;
+  background: #3ddc84; box-shadow: 0 0 8px #3ddc84;
+}
 .panel-toggles { display: none; gap: 6px; }
 
 /* ---------- buttons ---------- */

@@ -767,3 +767,64 @@ export function designSearch(scenario, { T = [24, 30, 36, 42, 48, 54, 60], P = [
   const minimal = pareto.find(r => r.reachesTarget) || null;
   return { results, pareto, minimal, target, evaluated: cands.length };
 }
+
+// ---------- показатели для вида абонента ----------
+
+/* Окна связи и перерывы за горизонт для одного пункта — то, что видит житель как расписание.
+   Один проход по сетке: границы окон, длительности и причина каждого перерыва.
+   `availability` здесь совпадает с computeAvailability() по построению (тот же findRoute с липкостью),
+   а рельеф и наклонения плоскостей учитываются сами — они уже внутри snapshot(). */
+export function contactWindows(s, clientId) {
+  const { step, steps } = timeGrid(s);
+  const windows = [], gaps = [];
+  let prevRoute = null, runOk = null, runStart = 0, runReason = null, okCount = 0;
+  const close = (kEnd) => {
+    const seg = { start_s: runStart * step, end_s: (kEnd + 1) * step };
+    seg.durMin = (seg.end_s - seg.start_s) / 60;
+    if (runOk) windows.push(seg); else { seg.reason = runReason; gaps.push(seg); }
+  };
+  for (let k = 0; k < steps; k++) {
+    const snap = snapshot(s, k * step);
+    const r = findRoute(s, snap, clientId, prevRoute);
+    prevRoute = r.path ? r : null;
+    const ok = !!r.path;
+    if (ok) okCount++;
+    if (runOk === null) { runOk = ok; runStart = k; runReason = r.reason; }
+    else if (ok !== runOk) { close(k - 1); runOk = ok; runStart = k; runReason = r.reason; }
+    else if (!ok && r.reason) runReason = r.reason;   // в перерыве держим последнюю причину
+  }
+  if (runOk !== null) close(steps - 1);
+  const longest = windows.reduce((a, w) => (w.durMin > (a?.durMin ?? -1) ? w : a), null);
+  const worstGap = gaps.reduce((a, g) => (g.durMin > (a?.durMin ?? -1) ? g : a), null);
+  return { step_s: step, steps, windows, gaps, availability: okCount / steps, longestWindow: longest, worstGap };
+}
+
+/* Небо над пунктом: азимут, возвышение и дальность аппаратов — в терминах, которые житель
+   может проверить, подняв голову. Отдаём и те, что закрыты рельефом (`blocked`): для человека
+   разница между «спутника нет» и «спутник есть, но за сопкой» — это разница между
+   «ждать пролёта» и «переставить антенну». Углы считаем через siteFrame/lookAngles,
+   чтобы азимут совпадал с тем, по которому snapshot() выбирает сектор маски. */
+export function skyView(s, clientId, t) {
+  const site = s.ground_sites.find(g => g.id === clientId);
+  if (!site) return [];
+  const frame = siteFrame(site);
+  const mask = siteMask(site);
+  const snap = snapshot(s, t);
+  const g = snap.ground[clientId];
+  if (!g) return [];
+  const blocked = new Set(g.blocked ?? []);
+  const out = [];
+  for (const k of [...(g.visibleRaw ?? []), ...blocked]) {
+    const a = lookAngles(frame, snap.pos[k]);
+    out.push({
+      index: k,
+      id: s.design.satellites[k].id,
+      azDeg: a.az_deg,
+      elDeg: a.el_deg,
+      rangeKm: a.range_km,
+      blocked: blocked.has(k),
+      maskDeg: mask ? maskSector(mask, a.az_deg) : 0,
+    });
+  }
+  return out.sort((a, b) => b.elDeg - a.elDeg);
+}
