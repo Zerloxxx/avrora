@@ -6,8 +6,8 @@
   --glass: rgba(6, 8, 16, 0.6);
   --accent: #4fd1ff;
   --accent-2: #ff4fd8;
-  --font-display: "Unbounded", "Inter", "Segoe UI", system-ui, sans-serif;
-  --font-body: "Inter", "Segoe UI", system-ui, sans-serif;
+  --font-display: "Unbounded", "Golos Text", "Segoe UI", system-ui, sans-serif;
+  --font-body: "Golos Text", "Segoe UI", system-ui, sans-serif;
   /* движение: одни кривые и длительности на весь интерфейс */
   --ease-out: cubic-bezier(0.23, 1, 0.32, 1);
   --ease-in-out: cubic-bezier(0.77, 0, 0.175, 1);
@@ -675,3 +675,4 @@ body.show-left #toggle-left, body.show-right #toggle-right { background: rgba(79
 .panel { padding-right: 14px; scrollbar-gutter: stable; }
 /* стрелки у числовых полей и кнопки в select — под тёмную схему */
 .panel input[type=number], .panel select, .panel input[type=time], .modal select, .modal input { color-scheme: dark; }
+.cmp tr.best td { background: rgba(79,209,255,.06); }

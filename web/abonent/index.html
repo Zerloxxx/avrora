@@ -5,7 +5,7 @@
 <title>Аврора · связь в вашем пункте</title>
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <meta name="description" content="Когда будет связь, сколько она продлится и через какой спутник — для наземного пункта северной спутниковой группировки.">
-<meta name="theme-color" content="#05070f">
+<meta name="theme-color" content="#0a0908">
 
 <!-- iOS: «Добавить на экран «Домой»» открывает страницу без адресной строки -->
 <meta name="apple-mobile-web-app-capable" content="yes">
@@ -16,6 +16,8 @@
 <link rel="icon" type="image/png" href="icon-180.png">
 <link rel="manifest" href="manifest.webmanifest">
 
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Unbounded:wght@500;700&family=Golos+Text:wght@400;500;600&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="style.css">
 <!-- как на основном сайте: three резолвится по имени -->
 <script type="importmap">
@@ -31,7 +33,7 @@
 
   <header class="top">
     <div class="brand"><i></i>АВРОРА</div>
-    <a class="link" id="to-site" href="../index.html">Инженерный вид →</a>
+    <a class="link" id="to-site" href="../index.html">Инженерный вид</a>
   </header>
 
   <section class="status bad" id="status">
@@ -46,19 +48,19 @@
   </section>
 
   <section class="card">
-    <h2>Ближайшие окна связи</h2>
+    <h2>Когда будет связь</h2>
     <div id="windows-list"></div>
   </section>
 
   <section class="card">
-    <h2>Как связь идёт сейчас</h2>
+    <h2>Через что идёт сигнал</h2>
     <div id="route-info"></div>
   </section>
 
   <section class="card">
-    <h2>Сутки целиком</h2>
+    <h2>Весь день</h2>
     <canvas id="strip" class="strip"></canvas>
-    <div class="legend"><span><i class="g"></i>связь</span><span><i class="r"></i>перерыв</span><span>00:00 — 24:00</span></div>
+    <div class="legend"><span><i class="g"></i>связь есть</span><span><i class="r"></i>связи нет</span><span class="range">00:00–24:00</span></div>
     <div class="stats" id="day-stats"></div>
   </section>
 
@@ -66,13 +68,13 @@
     <h2>Спутники над вами</h2>
     <div id="sky-list"></div>
     <p class="note" id="terrain-note"></p>
-    <p class="note">Аппарат считается видимым, когда поднялся выше порогового угла над горизонтом и не закрыт рельефом. Направление — сторона света, куда смотреть.</p>
+    <p class="note">Спутник считается видимым, когда он поднялся достаточно высоко над горизонтом и его не закрывают горы или дома. Сторона света подсказывает, куда он сейчас смотрит.</p>
   </section>
 
   <section class="card">
-    <h2>Ваш пункт</h2>
+    <h2>Где вы находитесь</h2>
     <div class="seg" id="client-seg"></div>
-    <button class="btn wide" id="btn-geo">⌖ Моё местоположение</button>
+    <button class="btn wide" id="btn-geo">Определить моё местоположение</button>
     <p class="note">Выбор из пунктов сценария даёт те же числа, что инженерный вид. «Моё местоположение» добавляет вашу точку как новый клиентский пункт и считает для неё.</p>
   </section>
 

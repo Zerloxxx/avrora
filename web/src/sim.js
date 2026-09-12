@@ -828,3 +828,45 @@ export function skyView(s, clientId, t) {
   }
   return out.sort((a, b) => b.elDeg - a.elDeg);
 }
+
+// Сравнение раскладок очередей: та же группировка, но аппараты первых очередей разнесены по плоскостям,
+// и альтернативные Walker-группировки того же размера. Для каждой — показатели на каждом этапе.
+// Отвечает на вопрос «не лучше ли первые 16 запустить не в одну плоскость, а в несколько».
+export function layoutCompare(scenario, { stepMul = 1, planes = [4, 6], onProgress } = {}) {
+  const base = deepClone(scenario);
+  const T = base.design.satellites.length;
+  const B = maxBatch(base);
+  const sizes = Array.from({ length: B }, (_, i) => base.design.satellites.filter(x => x.launch_batch === i + 1).length);
+  const options = [];
+  const fullOf = design => ({ ...deepClone(design), launch_stage: B });
+  options.push({ id: 'case', name: 'как в файле: очередь = плоскость', kind: 'batches', design: fullOf(base.design), launches: `${B} запуска по плоскости` });
+  { const d = deepClone(base.design); assignBatches(d.satellites, sizes, 'spread');
+    options.push({ id: 'spread', name: `те же плоскости, очереди вперемешку (через слот)`, kind: 'batches', design: fullOf(d), launches: `${base.design.planes.length} запуска на каждую очередь или разведение узлов дрейфом` }); }
+  const evalScore = d => { const sc = deepClone(base); sc.design = { ...d, launch_stage: B }; return score(computeAvailability(sc, stepMul * 3)); };
+  let done = 0; const total = planes.reduce((a, p) => a + p, 0) + (options.length + planes.length) * B;
+  for (const P of planes) {
+    if (T % P !== 0) continue;
+    let best = null;
+    for (let F = 0; F < P; F++) {
+      const d = walkerDelta({ T, P, F, raanSpread: 180, batches: B, batchMode: 'spread' });
+      const sc = evalScore(d); done++; onProgress?.(done, total);
+      if (!best || sc > best.sc) best = { sc, d, F };
+    }
+    options.push({ id: `walker${P}`, name: `другая группировка: Walker ${T}/${P}/${best.F}, очереди вперемешку`, kind: 'walker', walker: { T, P, F: best.F, raanSpread: 180, batches: B, batchMode: 'spread' }, design: fullOf(best.d), launches: `${P} плоскостей — ${P} запусков на очередь или дрейф узлов` });
+  }
+  for (const o of options) {
+    o.stages = [];
+    for (let st = 1; st <= B; st++) {
+      const sc = deepClone(base); sc.design = { ...deepClone(o.design), launch_stage: st };
+      const av = computeAvailability(sc, stepMul);
+      let isl = 0; for (let t = 0; t < sc.environment.horizon_s; t += 3600) isl += snapshot(sc, t).isl.length;
+      o.stages.push({ stage: st, sats: sc.design.satellites.filter(x => x.launch_batch <= st).length, summary: summarize(av), min: minAvail(av), maxGap: maxGapOf(av), isl: isl / (sc.environment.horizon_s / 3600) });
+      done++; onProgress?.(Math.min(done, total), total);
+    }
+    o.assignment = Object.fromEntries(o.design.satellites.map(x => [x.id, x.launch_batch]));
+  }
+  // лучший по первой очереди (худший пункт), затем по второй
+  const rank = o => o.stages.slice(0, -1).reduce((a, st, i) => a + st.min / (i + 1), 0);
+  const bestId = options.slice().sort((a, b) => rank(b) - rank(a))[0].id;
+  return { options: options.map(({ design, ...o }) => o), bestId, batches: B, sizes, target: base.environment.target_availability };
+}

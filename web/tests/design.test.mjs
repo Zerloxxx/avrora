@@ -5,7 +5,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { snapshot, computeAvailability, validate, satPositions, siteFrame, lookAngles, uniformMask, sectorMask, maskFromProfiles,
-  buildingAngle, TERRAIN_PRESETS, walkerDelta, assignBatches, designSearch, optimizeBatches, deploymentPlan, maxBatch } from '../src/sim.js';
+  buildingAngle, TERRAIN_PRESETS, walkerDelta, assignBatches, designSearch, optimizeBatches, deploymentPlan, maxBatch, layoutCompare } from '../src/sim.js';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const window = {};
@@ -129,4 +129,19 @@ test('состав очередей при шести очередях: разм
   for (const v of Object.values(r.assignment)) counts[v] = (counts[v] || 0) + 1;
   assert.deepEqual(counts, { 1: 8, 2: 8, 3: 8, 4: 8, 5: 8, 6: 8 });
   assert.ok(r.options[0].score >= r.options.find(o => o.name === 'текущая').score);
+});
+
+test('сравнение раскладок: разнесение первой очереди по плоскостям поднимает худший пункт и режет перерыв', () => {
+  const r = layoutCompare(full, { planes: [4] });
+  const byId = Object.fromEntries(r.options.map(o => [o.id, o]));
+  assert.ok(byId.case && byId.spread && byId.walker4);
+  // полная группировка у «тех же плоскостей» не меняется
+  assert.equal(byId.spread.stages[2].min, byId.case.stages[2].min);
+  // первая очередь: 13% → ~31%, перерыв 13 ч → ~1 ч
+  assert.ok(byId.spread.stages[0].min > byId.case.stages[0].min + 0.1);
+  assert.ok(byId.spread.stages[0].maxGap < byId.case.stages[0].maxGap / 5);
+  assert.equal(r.bestId, 'spread');
+  // размеры очередей сохранены
+  const counts = {}; for (const b of Object.values(byId.spread.assignment)) counts[b] = (counts[b] || 0) + 1;
+  assert.deepEqual(counts, { 1: 16, 2: 16, 3: 16 });
 });

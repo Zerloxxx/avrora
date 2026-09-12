@@ -198,7 +198,7 @@ function drawGlobe() {
   const label = (q, text, color, bold) => {
     if (q.hidden) return;
     lctx.fillStyle = color;
-    lctx.font = `${bold ? 600 : 500} 11px Inter, system-ui, sans-serif`;
+    lctx.font = `${bold ? 600 : 500} 11px 'Golos Text', system-ui, sans-serif`;
     lctx.shadowColor = 'rgba(0,0,0,0.9)'; lctx.shadowBlur = 4;
     lctx.fillText(text, q.sx + 10, q.sy + 4);
     lctx.shadowBlur = 0;
@@ -218,7 +218,7 @@ function drawGlobe() {
     const q = project(ecefToWorld(snap.ground[g.id].pos), W, H);
     const col = snap.ground[g.id].offline ? FAIL_COLOR : isMe ? '#ffffff' : 'rgba(225,232,245,0.85)';
     mark(q, col, isMe ? 8 : 6, isGw);
-    label(q, isMe ? 'вы' : g.id + ' · шлюз', col, isMe);
+    label(q, isMe ? 'вы' : g.id + ', шлюз', col, isMe);
   }
   if (path) {
     const k = path[0];
@@ -252,12 +252,12 @@ function renderStatus() {
   if (has) {
     const left = seg ? (seg.end_s - t) / 60 : 0;
     const sat = s.design.satellites[S.route.path[0]].id;
-    sub = `ещё ${minutes(left)} · через ${sat}`;
+    sub = `ещё ${minutes(left)}, через аппарат ${sat}`;
   } else {
     const next = S.windows.windows.find(w => w.start_s > t);
     const reason = seg?.reason ? REASONS[seg.reason] : '';
-    sub = next ? `появится в ${fmtTime(next.start_s)}, через ${minutes((next.start_s - t) / 60)}` : 'до конца суток окон нет';
-    if (reason) sub += ` — ${reason}`;
+    sub = next ? `появится в ${fmtTime(next.start_s)}, через ${minutes((next.start_s - t) / 60)}` : 'до конца суток связи не будет';
+    if (reason) sub += `. Причина: ${reason}`;
   }
   $('#status-sub').textContent = sub;
 
@@ -267,12 +267,11 @@ function renderStatus() {
     const snap = S.snap, site = snap.ground[S.clientId], gw = snap.ground[S.route.gateway];
     const km = routeLengthKm(snap, S.route.path, site.pos, gw.pos);
     const chain = S.route.path.map(k => s.design.satellites[k].id).join(' → ');
-    box.innerHTML = `<div class="kv"><span>Через аппараты</span><b>${chain}</b></div>
-      <div class="kv"><span>Переходов</span><b>${S.route.path.length + 1}</b></div>
-      <div class="kv"><span>Задержка сигнала</span><b>${(km / C_LIGHT * 1000).toFixed(0)} мс</b></div>
-      <div class="kv"><span>Выход в сеть</span><b>${S.route.gateway}</b></div>`;
+    box.innerHTML = `<div class="kv"><span>${S.route.path.length === 1 ? 'Спутник' : 'Цепочка спутников'}</span><b>${chain}</b></div>
+      <div class="kv"><span>Наземная станция</span><b>${S.route.gateway}</b></div>
+      <div class="kv"><span>Сигнал идёт</span><b>${(km / C_LIGHT * 1000).toFixed(0)} мс</b></div>`;
   } else {
-    box.innerHTML = `<div class="kv muted"><span>Маршрута до шлюза сейчас нет</span></div>`;
+    box.innerHTML = `<div class="kv muted"><span>Сейчас сигналу не через что пройти до наземной станции</span></div>`;
   }
 
   // спутники над головой; закрытые рельефом показываем отдельно — для жителя это другой ответ
@@ -282,18 +281,18 @@ function renderStatus() {
   $('#sky-list').innerHTML = sky.length
     ? sky.map(x => `<div class="sky ${onRoute.has(x.index) ? 'on' : ''} ${x.blocked ? 'blocked' : ''}">
         <b>${x.id}</b><span>${x.elDeg.toFixed(0)}° над горизонтом</span>
-        <span>${dir(x.azDeg)} · ${x.rangeKm.toFixed(0)} км</span>
-        ${onRoute.has(x.index) ? '<i>обслуживает</i>'
-          : x.blocked ? `<i class="b">за рельефом · закрытие ${x.maskDeg.toFixed(0)}°</i>` : ''}</div>`).join('')
-    : '<div class="kv muted"><span>Ни одного аппарата выше ' + s.environment.min_elevation_deg + '° — небо пустое</span></div>';
+        <span>${dir(x.azDeg)}, ${x.rangeKm.toFixed(0)} км</span>
+        ${onRoute.has(x.index) ? '<i>передаёт ваш сигнал</i>'
+          : x.blocked ? `<i class="b">за рельефом, закрытие ${x.maskDeg.toFixed(0)}°</i>` : ''}</div>`).join('')
+    : '<div class="kv muted"><span>Сейчас над вами нет ни одного спутника достаточно высоко</span></div>';
 
   // если у пункта задан рельеф, говорим об этом прямо: иначе непонятно, почему спутник есть, а связи нет
   const site = s.ground_sites.find(g => g.id === S.clientId);
   const nBlocked = sky.filter(x => x.blocked).length;
   $('#terrain-note').innerHTML = site?.horizon_mask
-    ? `Вокруг пункта учтён рельеф и застройка${site.terrain ? ` (${site.terrain})` : ''}: закрытие неба до `
-      + `${Math.max(...site.horizon_mask).toFixed(0)}°. Сейчас за рельефом ${nBlocked} ${nBlocked === 1 ? 'аппарат' : 'аппаратов'}.`
-    : 'Рельеф вокруг пункта не задан — действует только порог ' + s.environment.min_elevation_deg + '° над горизонтом.';
+    ? `Здесь учтены горы и дома вокруг: они закрывают небо до ${Math.max(...site.horizon_mask).toFixed(0)}° над горизонтом. `
+      + `Сейчас за ними ${nBlocked === 0 ? 'никого нет' : nBlocked === 1 ? 'один спутник' : `${nBlocked} спутников`}.`
+    : 'Считаем как на открытом месте: спутник виден, если он выше ' + s.environment.min_elevation_deg + '° над горизонтом.';
 
   // отметка «сейчас» на ленте суток: раз в секунду, чтобы не перерисовывать канвас каждый кадр
   const mark = stripMarker();
@@ -301,7 +300,7 @@ function renderStatus() {
 
   $('#clock-time').textContent = fmtTime(S.t);
   const leader = leaderPresent();
-  $('#clock-mode').textContent = S.follow ? `инженерный вид · ×${Math.round(S.speed / 60)}`
+  $('#clock-mode').textContent = S.follow ? `за инженерным видом, ×${Math.round(S.speed / 60)}`
     : S.live ? 'сейчас, UTC' : 'выбранный момент';
   const btn = $('#btn-live');
   if (S.follow) { btn.hidden = false; btn.textContent = 'Сейчас'; }
@@ -317,10 +316,10 @@ function renderDay() {
   const w = S.windows, a = S.avail, target = S.scenario.environment.target_availability;
   drawStrip($('#strip'), a.ok, stripMarker());
   $('#day-stats').innerHTML = `
-    <div class="stat"><b class="${a.availability >= target ? 'good' : 'bad'}">${pct(a.availability)}</b><span>связь за сутки</span></div>
-    <div class="stat"><b>${w.windows.length}</b><span>окон связи</span></div>
+    <div class="stat"><b class="${a.availability >= target ? 'good' : 'bad'}">${pct(a.availability)}</b><span>времени со связью</span></div>
+    <div class="stat"><b>${w.windows.length}</b><span>сеансов связи</span></div>
     <div class="stat"><b>${w.gaps.length}</b><span>перерывов</span></div>
-    <div class="stat"><b>${minutes(w.worstGap?.durMin ?? 0)}</b><span>самый длинный перерыв</span></div>`;
+    <div class="stat"><b>${minutes(w.worstGap?.durMin ?? 0)}</b><span>самый долгий перерыв</span></div>`;
 
   const t = S.t;
   const next = w.windows.filter(x => x.end_s > t).slice(0, 5);
@@ -328,8 +327,8 @@ function renderDay() {
     ? next.map(x => `<div class="win ${x.start_s <= t ? 'now' : ''}">
         <b>${fmtTime(x.start_s)} — ${fmtTime(x.end_s)}</b>
         <span>${minutes(x.durMin)}</span>
-        ${x.start_s <= t ? '<i>идёт сейчас</i>' : ''}</div>`).join('')
-    : '<div class="kv muted"><span>До конца суток окон больше нет</span></div>';
+        ${x.start_s <= t ? '<i>сейчас</i>' : ''}</div>`).join('')
+    : '<div class="kv muted"><span>До конца дня связи больше не будет</span></div>';
 }
 
 function renderClients() {
@@ -337,14 +336,14 @@ function renderClients() {
   seg.innerHTML = '';
   for (const c of S.scenario.ground_sites.filter(g => g.role === 'client')) {
     const b = document.createElement('button');
-    b.textContent = c.id === 'MY' ? 'моя точка' : c.id;
+    b.textContent = c.id === 'MY' ? 'Моя точка' : (c.name && c.name.length <= 14 ? c.name : c.id);
     b.className = c.id === S.clientId ? 'active' : '';
     b.onclick = () => { S.clientId = c.id; recompute(); };
     seg.appendChild(b);
   }
   const site = S.scenario.ground_sites.find(g => g.id === S.clientId);
-  $('#foot').textContent = `${site.name || site.id}: ${site.lat_deg.toFixed(2)}° с.ш., ${site.lon_deg.toFixed(2)}° в.д. · `
-    + `сценарий «${S.scenario.meta?.title || S.scenarioId}» · расчёт тот же, что в инженерном виде`;
+  $('#foot').textContent = `${site.name || site.id}, ${site.lat_deg.toFixed(2)}° с.ш., ${site.lon_deg.toFixed(2)}° в.д. `
+    + `Сценарий «${S.scenario.meta?.title || S.scenarioId}». Расчёт тот же, что в инженерном виде.`;
 }
 
 /* Применить дифф конфигурации: и на старте из ссылки, и когда инженерный вид что-то поменял.

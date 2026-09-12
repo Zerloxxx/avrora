@@ -5,7 +5,7 @@ import { loadScenario, markChanged, resetScenario, setStage, setEclipseIslOff, a
 import { overlay, zoomBy, zoomTo, applyCamera, pickLatLon, getLastProj, startLoop, camera, dyn, root, inertial } from './scene.js';
 import { renderStatus, openCompare } from './panels.js';
 import { startBroadcaster } from './sync.js';
-import { renderDesign, runAnalysis, renderCoverage, renderDeployment, renderBatches, renderPairs, renderSpares, renderMonteCarlo,
+import { renderDesign, renderLayouts, runAnalysis, renderCoverage, renderDeployment, renderBatches, renderPairs, renderSpares, renderMonteCarlo,
   renderQuality, buildReport, runOptimize, runVulnerable, toggleCoverageOverlay } from './analysis.js';
 
 // ---------- события ----------
@@ -53,6 +53,7 @@ $('#an-run-design').onclick = () => {
 $('#an-coverage-globe').onchange = ev => toggleCoverageOverlay(ev.target.checked);
 $('#an-run-deploy').onclick = () => runAnalysis('deployment', {}, '#an-deploy-out', renderDeployment);
 $('#an-run-batches').onclick = () => runAnalysis('batches', {}, '#an-deploy-out', renderBatches);
+$('#an-run-layouts').onclick = () => runAnalysis('layouts', {}, '#an-deploy-out', renderLayouts);
 $('#an-run-pairs').onclick = () => runAnalysis('pairs', {}, '#an-resilience-out', (r, out) => { out.innerHTML = ''; renderPairs(r, out); });
 $('#an-run-spares').onclick = () => runAnalysis('spares', {}, '#an-resilience-out', renderSpares);
 $('#an-run-mc').onclick = () => runAnalysis('montecarlo', { pFail: (+$('#an-mc-p').value || 5) / 100, runs: +$('#an-mc-runs').value || 300 }, '#an-resilience-out', renderMonteCarlo);

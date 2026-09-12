@@ -160,7 +160,7 @@ function drawRose(cv, mask) {
   g.closePath();
   g.fillStyle = mask ? 'rgba(126,231,135,0.35)' : 'rgba(255,255,255,0.12)'; g.fill();
   g.strokeStyle = mask ? '#7ee787' : 'rgba(255,255,255,0.4)'; g.stroke();
-  g.fillStyle = 'rgba(255,255,255,0.6)'; g.font = '8px Inter, sans-serif'; g.fillText('N', c - 2.5, 8);
+  g.fillStyle = 'rgba(255,255,255,0.6)'; g.font = '8px "Golos Text", sans-serif'; g.fillText('N', c - 2.5, 8);
 }
 
 // ---------- правая панель ----------

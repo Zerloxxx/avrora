@@ -226,7 +226,7 @@ function drawScene(now) {
     octx.beginPath(); octx.arc(q.sx, q.sy, 3, 0, Math.PI * 2); octx.fill();
     octx.shadowBlur = 0;
     octx.fillStyle = isSel ? '#fff' : 'rgba(233,237,247,0.9)';
-    octx.font = `${isSel ? 600 : 500} 11px Inter, sans-serif`;
+    octx.font = `${isSel ? 600 : 500} 11px 'Golos Text', sans-serif`;
     octx.shadowColor = 'rgba(0,0,0,0.9)'; octx.shadowBlur = 4;
     octx.fillText(g.id + (isGw ? ' · шлюз' : ''), q.sx + 12, q.sy + 4);
     octx.shadowBlur = 0;
@@ -241,7 +241,7 @@ function drawScene(now) {
       octx.beginPath(); octx.moveTo(q.sx - 4, q.sy - 4); octx.lineTo(q.sx + 4, q.sy + 4); octx.stroke();
     }
     if (routeSet.has(k) || state.hover === k) {
-      octx.fillStyle = '#fff'; octx.font = '500 11px Inter, sans-serif';
+      octx.fillStyle = '#fff'; octx.font = '500 11px "Golos Text", sans-serif';
       octx.shadowColor = 'rgba(0,0,0,0.9)'; octx.shadowBlur = 4;
       octx.fillText(sat.id, q.sx + 8, q.sy - 6);
       octx.shadowBlur = 0;

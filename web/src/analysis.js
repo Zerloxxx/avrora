@@ -32,7 +32,7 @@ export function renderCoverage(res, out) {
     g.fillStyle = heat(values[i * cols + j], target);
     g.fillRect(j * cellW, (rows - 1 - i) * cellH, Math.ceil(cellW), Math.ceil(cellH));
   }
-  g.font = '11px Inter, sans-serif'; g.fillStyle = 'rgba(0,0,0,0.75)';
+  g.font = '11px "Golos Text", sans-serif'; g.fillStyle = 'rgba(0,0,0,0.75)';
   for (let i = 0; i < rows; i += 2) g.fillText(`${lats[i]}°`, 4, (rows - 1 - i) * cellH + cellH / 2 + 4);
   for (let j = 0; j < cols; j += 6) g.fillText(`${lons[j]}°`, j * cellW + 2, ch - 4);
   // пункты
@@ -67,7 +67,7 @@ export function renderDeployment(res, out) {
   const L = 50, Rr = 20, T = 20, B = 40, w = cv.width - L - Rr, h = cv.height - T - B;
   const months = monthsBetween * 3;
   const X = m => L + m / months * w, Y = v => T + (1 - v) * h;
-  g.strokeStyle = 'rgba(255,255,255,0.08)'; g.fillStyle = 'rgba(233,237,247,0.7)'; g.font = '11px Inter, sans-serif';
+  g.strokeStyle = 'rgba(255,255,255,0.08)'; g.fillStyle = 'rgba(233,237,247,0.7)'; g.font = '11px "Golos Text", sans-serif';
   for (let v = 0; v <= 1; v += 0.25) { g.beginPath(); g.moveTo(L, Y(v)); g.lineTo(L + w, Y(v)); g.stroke(); g.fillText(pct(v), 6, Y(v) + 4); }
   for (let m = 0; m <= months; m += monthsBetween) { g.fillText(`${m} мес`, X(m) - 12, cv.height - 18); }
   g.strokeStyle = '#ffd166'; g.setLineDash([4, 4]); g.beginPath(); g.moveTo(L, Y(target)); g.lineTo(L + w, Y(target)); g.stroke(); g.setLineDash([]);
@@ -151,7 +151,7 @@ export function renderMonteCarlo(res, out) {
   const g = cv.getContext('2d');
   const max = Math.max(...res.hist, 1), bw = cv.width / 20;
   res.hist.forEach((h, i) => { const x = i * bw, y = 150 - h / max * 130; g.fillStyle = (i + 1) / 20 <= res.target ? '#ff4d4d' : '#3ddc84'; g.fillRect(x + 1, y, bw - 2, 150 - y); });
-  g.fillStyle = 'rgba(233,237,247,0.7)'; g.font = '11px Inter, sans-serif';
+  g.fillStyle = 'rgba(233,237,247,0.7)'; g.font = '11px "Golos Text", sans-serif';
   for (let i = 0; i <= 20; i += 5) g.fillText(pct(i / 20), i * bw - 8, 168);
   const div = document.createElement('div');
   div.innerHTML = `<div class="kpis">${kpi(pct(res.probOk), `вероятность удержать ≥ ${pct(res.target)} для всех пунктов`, res.probOk > 0.9 ? 'good' : res.probOk > 0.6 ? 'warn' : 'bad')}${kpi(pct(res.p50), 'медиана худшего пункта')}${kpi(pct(res.p10), '10-й процентиль (плохой день)')}${kpi(res.avgFailed.toFixed(1), 'отказов в среднем за сутки')}</div>
@@ -190,6 +190,7 @@ export function buildReport() {
   if (an.optimize?.result) recs.push('Автоподбор RAAN/фазирования выполнен — см. раздел «Варианты» для сравнения.');
   if (an.deployment?.result) { const st = an.deployment.result.stages; const firstOk = st.find(x => Math.min(...clients.map(c => x.summary[c]?.availability ?? 0)) >= target); recs.push(firstOk ? `Целевой уровень достигается с этапа ${firstOk.stage} (${firstOk.month} мес. после первого запуска).` : 'Ни один этап развёртывания не достигает цели — рекомендуется дополнительный шлюз в восточном секторе.'); }
   if (an.batches?.result) recs.push(`Состав очередей: лучший вариант первой очереди — «${an.batches.result.best1}».`);
+  if (an.layouts?.result) { const L = an.layouts.result; const b = L.options.find(o => o.id === L.bestId), c = L.options[0]; if (b.id !== 'case') recs.push(`Раскладка очередей по плоскостям: «${b.name}» даёт на первой очереди ${pct(b.stages[0].min)} для худшего пункта против ${pct(c.stages[0].min)} при запуске плоскость за плоскостью; самый долгий перерыв ${Math.round(c.stages[0].maxGap / 60)} ч → ${Math.round(b.stages[0].maxGap)} мин. Реализуемо отдельными запусками в каждую плоскость или разведением узлов прецессией.`); }
   if (an.pairs?.result) recs.push(`Запас прочности по отказам: ${an.pairs.result.tolerance} (N-1: ${pct(an.pairs.result.n1Min)}, N-2: ${pct(an.pairs.result.n2Min)}). Самая опасная пара: ${an.pairs.result.worstPairs[0]?.a} + ${an.pairs.result.worstPairs[0]?.b}.`);
   if (an.spares?.result) recs.push(`Резервный аппарат: ${an.spares.result.best[0].plane}, слот ${an.spares.result.best[0].slot.toFixed(2)}° — поднимает доступность при отказах критичных аппаратов до ${pct(an.spares.result.best[0].resilience)}.`);
   if (an.montecarlo?.result) recs.push(`Монте-Карло (${an.montecarlo.result.runs} прогонов, ${(an.montecarlo.result.pFail * 100).toFixed(0)}% отказов/сутки): цель удерживается с вероятностью ${pct(an.montecarlo.result.probOk)}.`);
@@ -200,7 +201,7 @@ export function buildReport() {
   const variantsTable = vs.length ? `<h2>Сравнение сохранённых вариантов</h2><table><thead><tr><th>Вариант</th><th>Сценарий</th><th>Изменения</th>${clients.map(c => `<th>${c}</th>`).join('')}<th>Макс. перерыв</th></tr></thead><tbody>${vs.map(v => `<tr><td><b>${esc(v.name)}</b></td><td>${esc(v.scenarioTitle)}</td><td>${esc(v.changes.join('; ') || '—')}</td>${clients.map(c => { const r = v.summary[c]; return r ? `<td class="${r.availability >= target ? 'good' : 'bad'}">${pct(r.availability)}</td>` : '<td>—</td>'; }).join('')}<td>${Math.max(...Object.values(v.summary).map(r => r.maxGapMin)).toFixed(0)} мин</td></tr>`).join('')}</tbody></table>` : '';
 
   const html = `<!doctype html><html lang="ru"><head><meta charset="utf-8"><title>Обоснование конфигурации — ${esc(s.meta?.title || s.meta?.id || 'сценарий')}</title>
-<style>:root{color-scheme:light}body{background:#fff;font:15px/1.6 Georgia,'Times New Roman',serif;color:#16181d;max-width:820px;margin:48px auto;padding:0 28px}h1{font:600 30px/1.15 Georgia,serif;margin:0 0 10px;letter-spacing:-.01em}h2{font:600 19px/1.3 Georgia,serif;margin:36px 0 12px}p{margin:0 0 12px;max-width:70ch}.lead{color:#5b606b;margin-bottom:28px}.muted{color:#5b606b;font-size:13.5px}table{border-collapse:collapse;width:100%;margin:10px 0 16px;font:13.5px/1.45 Inter,Segoe UI,system-ui,sans-serif}th,td{padding:7px 10px 7px 0;text-align:left;vertical-align:top;border-bottom:1px solid #e6e8ee}th{font-weight:600;color:#16181d;border-bottom:2px solid #16181d}td.good{color:#1a7f37;font-weight:600}td.bad{color:#b3261e;font-weight:600}img.strip{width:100%;height:14px;image-rendering:pixelated}ul{padding-left:22px;max-width:70ch}li{margin-bottom:6px}.kv{display:grid;grid-template-columns:repeat(4,1fr);gap:14px 24px;margin:6px 0 18px}.kv div{border-top:1px solid #16181d;padding-top:6px}.kv b{display:block;font:600 22px/1.1 Georgia,serif}.kv span{font:13px Inter,Segoe UI,system-ui,sans-serif;color:#5b606b}@media print{body{margin:0}h2{page-break-after:avoid}}</style></head><body>
+<style>:root{color-scheme:light}body{background:#fff;font:15px/1.6 Georgia,'Times New Roman',serif;color:#16181d;max-width:820px;margin:48px auto;padding:0 28px}h1{font:600 30px/1.15 Georgia,serif;margin:0 0 10px;letter-spacing:-.01em}h2{font:600 19px/1.3 Georgia,serif;margin:36px 0 12px}p{margin:0 0 12px;max-width:70ch}.lead{color:#5b606b;margin-bottom:28px}.muted{color:#5b606b;font-size:13.5px}table{border-collapse:collapse;width:100%;margin:10px 0 16px;font:13.5px/1.45 \"Golos Text\",Segoe UI,system-ui,sans-serif}th,td{padding:7px 10px 7px 0;text-align:left;vertical-align:top;border-bottom:1px solid #e6e8ee}th{font-weight:600;color:#16181d;border-bottom:2px solid #16181d}td.good{color:#1a7f37;font-weight:600}td.bad{color:#b3261e;font-weight:600}img.strip{width:100%;height:14px;image-rendering:pixelated}ul{padding-left:22px;max-width:70ch}li{margin-bottom:6px}.kv{display:grid;grid-template-columns:repeat(4,1fr);gap:14px 24px;margin:6px 0 18px}.kv div{border-top:1px solid #16181d;padding-top:6px}.kv b{display:block;font:600 22px/1.1 Georgia,serif}.kv span{font:13px 'Golos Text',Segoe UI,system-ui,sans-serif;color:#5b606b}@media print{body{margin:0}h2{page-break-after:avoid}}</style></head><body>
 <h1>Обоснование конфигурации спутниковой группировки</h1>
 <p class="lead">Сценарий «${esc(s.meta?.title || s.meta?.id || '')}». Сформировано ${new Date().toLocaleString('ru-RU')} сервисом «Аврора» для КосмоХакатона 2026.</p>
 <h2>Параметры</h2>
@@ -293,5 +294,32 @@ export function renderDesign(res, out) {
     const B = +$('#an-ds-B').value || 3;
     generateWalker({ T: c.T, P: c.P, F: c.F, raanSpread: c.spread, inclination_deg: c.inc === state.scenario.environment.inclination_deg ? undefined : c.inc, batches: B, batchMode: 'plane' });
     toast('Конфигурация применена — сохраните как вариант, чтобы сравнить с исходной', 'ok', 3500);
+  });
+}
+
+// --- раскладка очередей по плоскостям: «как в файле» против «разнесённо» ---
+export function renderLayouts(res, out) {
+  const { options, bestId, batches, target } = res;
+  const clients = Object.keys(options[0].stages[0].summary);
+  const cell = (v, ok) => `<td class="num ${ok ? 'good' : 'bad'}">${pct(v)}</td>`;
+  const stageBlock = st => `<h4 style="margin:14px 0 6px;font:500 13px var(--font-display)">Этап ${st + 1}: ${options[0].stages[st].sats} аппаратов на орбите</h4>
+    <table class="cmp"><thead><tr><th>Раскладка</th>${clients.map(c => `<th class="v">${c}</th>`).join('')}<th>Худший пункт</th><th>Самый долгий перерыв</th><th>ISL, среднее</th></tr></thead><tbody>
+    ${options.map(o => { const s = o.stages[st]; return `<tr class="${o.id === bestId ? 'best' : ''}"><td>${o.name}${o.id === bestId ? ' <b style="color:var(--accent)">лучшая</b>' : ''}</td>${clients.map(c => cell(s.summary[c].availability, s.summary[c].availability >= target)).join('')}<td class="num ${s.min >= target ? 'good' : 'bad'}"><b>${pct(s.min)}</b></td><td class="num">${s.maxGap >= 120 ? (s.maxGap / 60).toFixed(1) + ' ч' : s.maxGap.toFixed(0) + ' мин'}</td><td class="num">${s.isl.toFixed(0)}</td></tr>`; }).join('')}
+    </tbody></table>`;
+  const best = options.find(o => o.id === bestId), cur = options[0];
+  const s1b = best.stages[0], s1c = cur.stages[0];
+  const div = document.createElement('div');
+  div.innerHTML = `<div class="kpis">${kpi(pct(s1c.min), 'первая очередь, как в файле (худший пункт)', s1c.min >= target ? 'good' : 'bad')}${kpi(pct(s1b.min), `первая очередь, лучшая раскладка`, s1b.min >= target ? 'good' : s1b.min > s1c.min ? 'warn' : 'bad')}${kpi(`${(s1c.maxGap / 60).toFixed(0)} ч → ${s1b.maxGap >= 120 ? (s1b.maxGap / 60).toFixed(1) + ' ч' : s1b.maxGap.toFixed(0) + ' мин'}`, 'самый долгий перерыв на первой очереди')}</div>
+    ${Array.from({ length: batches - 1 }, (_, i) => stageBlock(i)).join('')}
+    <div class="an-note"><b>Почему так.</b> Одна плоскость проходит над пунктом дважды в сутки, между проходами связи нет часами. Разнесённые плоскости приходят в разное время — перерывы короче, худший пункт лучше. Плата — межспутниковые связи: внутри плоскости соседи держат канал постоянно, между плоскостями сближаются только у полюсов (столбец ISL). Поэтому оптимум — 3–4 плоскости, а не 8.
+    <br><b>Реализуемость.</b> Одна ракета выводит аппараты в одну плоскость; «вперемешку» — это либо отдельный запуск в каждую плоскость на каждую очередь, либо вывод на разные высоты с разведением узлов за счёт прецессии (несколько месяцев, почти без топлива). Полная группировка (последний этап) у вариантов «те же плоскости» не меняется.</div>
+    <div class="row" style="margin-top:8px">${options.filter(o => o.id !== 'case').map(o => `<button class="btn small ${o.id === bestId ? 'primary' : ''}" data-apply="${o.id}">Применить: ${o.id === 'spread' ? 'очереди вперемешку' : o.name.replace('другая группировка: ', '')}</button>`).join('')}</div>`;
+  out.innerHTML = '';
+  out.appendChild(div);
+  div.querySelectorAll('button[data-apply]').forEach(b => b.onclick = () => {
+    const o = options.find(x => x.id === b.dataset.apply);
+    if (o.kind === 'walker') generateWalker(o.walker);
+    else { for (const x of state.scenario.design.satellites) x.launch_batch = o.assignment[x.id]; markChanged(); }
+    toast('Раскладка применена — переключите этап на 1-й и сохраните как вариант, чтобы сравнить', 'ok', 4000);
   });
 }
