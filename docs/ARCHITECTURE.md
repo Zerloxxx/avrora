@@ -48,7 +48,7 @@
 
 ## Поток данных
 
-1. `loadScenario(raw)` → `state.base`, `state.scenario` → `recompute()` → `computeAvailability` (≈20 мс на сутки) → событие `recomputed` → панель «Доступность», вкладка «Качество».
+1. `loadScenario(raw)` → `state.base`, `state.scenario` → `recompute()` → `computeAvailability` (≈40 мс на сутки, замеры — в `web/CLAUDE.md`) → событие `recomputed` → панель «Доступность», вкладка «Качество».
 2. Правка в форме → `model.setX()` → `markChanged()` → (`scene:rebuild`, если менялась геометрия) → через 120 мс `recompute()` + `controls`.
 3. Каждый кадр `scene.js`: `snapshot(scenario, t)` → `findRoute(prev)` → рендер → `renderStatus()`.
 4. Тяжёлое (оптимизаторы, матрица пар, Монте-Карло, покрытие) → `runTask` → воркер → прогресс → результат в `state.analysis` → рендерер вкладки.
